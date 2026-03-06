@@ -64,6 +64,37 @@ definitions:
       error:
         type: string
     type: object
+  handlers.GetVideoURLRequest:
+    properties:
+      post_id:
+        example: 11434
+        type: integer
+      quality:
+        example: 720p
+        type: string
+    required:
+    - post_id
+    type: object
+  handlers.GetVideoURLResponse:
+    properties:
+      duration:
+        type: number
+      post_id:
+        type: integer
+      quality:
+        type: string
+      subtitle_url:
+        type: string
+      video_url:
+        type: string
+    type: object
+  handlers.ReviewState:
+    properties:
+      reviewed_ids:
+        items:
+          type: integer
+        type: array
+    type: object
   handlers.ToggleResult:
     properties:
       enable:
@@ -105,6 +136,129 @@ info:
   title: Video Center API
   version: "1.0"
 paths:
+  /proxy/image:
+    get:
+      description: Proxies cover images from upstream, adding the required API key
+        header
+      parameters:
+      - description: Upstream image URL to proxy
+        in: query
+        name: url
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Proxy cover image
+      tags:
+      - videos
+  /proxy/video:
+    get:
+      description: Proxies video content (m3u8 playlists and ts segments) from upstream
+        CDN. Rewrites URLs in m3u8 playlists to route through the proxy.
+      parameters:
+      - description: Upstream video URL to proxy
+        in: query
+        name: url
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Proxy video content
+      tags:
+      - videos
+  /review/state:
+    delete:
+      description: Clear all reviewed video IDs from server-side JSON file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.ReviewState'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Clear review state
+      tags:
+      - review
+    get:
+      description: Returns the list of reviewed video IDs stored in server-side JSON
+        file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.ReviewState'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Get review state
+      tags:
+      - review
+    post:
+      consumes:
+      - application/json
+      description: Add a video ID to the reviewed list in server-side JSON file
+      parameters:
+      - description: Post ID to add
+        in: body
+        name: request
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.ReviewState'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Add reviewed video ID
+      tags:
+      - review
   /videos:
     get:
       consumes:
@@ -215,6 +369,37 @@ paths:
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
       summary: Batch toggle video enable/disable
+      tags:
+      - videos
+  /videos/get-url:
+    post:
+      consumes:
+      - application/json
+      description: Fetch the full (non-preview) video URL from the upstream API for
+        a given post ID and quality
+      parameters:
+      - description: Post ID and quality
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.GetVideoURLRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.GetVideoURLResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Get full video URL
       tags:
       - videos
 schemes:
