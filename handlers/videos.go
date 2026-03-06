@@ -69,6 +69,96 @@ type BatchToggleResponse struct {
 	Results []ToggleResult `json:"results"`
 }
 
+// GetVideoURLRequest represents the request for getting a full video URL
+type GetVideoURLRequest struct {
+	PostID  int    `json:"post_id" binding:"required" example:"11434"`
+	Quality string `json:"quality" example:"720p"`
+}
+
+// GetVideoURLResponse represents the response from the get-video-url API
+type GetVideoURLResponse struct {
+	VideoURL    string  `json:"video_url"`
+	SubtitleURL string  `json:"subtitle_url"`
+	Quality     string  `json:"quality"`
+	PostID      int     `json:"post_id"`
+	Duration    float64 `json:"duration"`
+}
+
+// GetVideoURL godoc
+// @Summary Get full video URL
+// @Description Fetch the full (non-preview) video URL from the upstream API for a given post ID and quality
+// @Tags videos
+// @Accept json
+// @Produce json
+// @Param request body GetVideoURLRequest true "Post ID and quality"
+// @Success 200 {object} GetVideoURLResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 502 {object} ErrorResponse
+// @Router /videos/get-url [post]
+func GetVideoURL(c *gin.Context) {
+	var req GetVideoURLRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid request: " + err.Error()})
+		return
+	}
+
+	if req.Quality == "" {
+		req.Quality = "720p"
+	}
+
+	payload, _ := json.Marshal(map[string]interface{}{
+		"post_id": req.PostID,
+		"quality": req.Quality,
+	})
+
+	url := fmt.Sprintf("%s/pyvideo2/get-video-url", getBaseURL())
+	client := &http.Client{Timeout: 15 * time.Second}
+	httpReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to create request"})
+		return
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "application/json")
+	httpReq.Header.Set("X-API-KEY", getAPIKey())
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, ErrorResponse{Error: "failed to fetch video URL from upstream"})
+		return
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, ErrorResponse{Error: "failed to read upstream response"})
+		return
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		c.JSON(resp.StatusCode, ErrorResponse{Error: fmt.Sprintf("upstream returned %d: %s", resp.StatusCode, string(body))})
+		return
+	}
+
+	// Parse the upstream response and rewrite the video URL
+	var upstream map[string]interface{}
+	if err := json.Unmarshal(body, &upstream); err != nil {
+		c.Data(resp.StatusCode, "application/json", body)
+		return
+	}
+
+	if videoURL, ok := upstream["video_url"].(string); ok && videoURL != "" {
+		upstream["video_url"] = replaceVideoHost(videoURL)
+	}
+
+	rewritten, err := json.Marshal(upstream)
+	if err != nil {
+		c.Data(resp.StatusCode, "application/json", body)
+		return
+	}
+	c.Data(http.StatusOK, "application/json", rewritten)
+}
+
 // BatchDisableRequest represents the request body for batch disable
 type BatchDisableRequest struct {
 	PostIDs []int `json:"post_ids" binding:"required,min=1" example:"1,2,3"`

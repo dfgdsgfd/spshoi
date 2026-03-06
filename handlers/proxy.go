@@ -7,18 +7,46 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
-const proxyVideoPath = "/api/proxy/video?url="
+const (
+	proxyVideoPath          = "/api/proxy/video?url="
+	proxyImagePath          = "/api/proxy/image?url="
+	defaultVideoPlayBaseURL = "http://192.168.80.101:7896"
+	defaultImageAPIKey      = "co0slUKg6gA89AiV9oWbKqacVk0yph67"
+)
+
+// cdnHosts are upstream CDN hosts whose scheme+host+port should be replaced
+// with the video play base URL for direct client access.
+var cdnHosts = []string{
+	"edgecdn2-tc.yuelk.com:30086",
+	"edgeone-cdn.yuelk.com",
+}
 
 // allowedProxyHosts restricts which hosts can be proxied to prevent SSRF
 var allowedProxyHosts = []string{
 	"edgecdn2-tc.yuelk.com",
+	"edgeone-cdn.yuelk.com",
 	"v.yuelk.com",
+}
+
+func getVideoPlayBaseURL() string {
+	if v := os.Getenv("VIDEO_PLAY_BASE_URL"); v != "" {
+		return strings.TrimRight(v, "/")
+	}
+	return defaultVideoPlayBaseURL
+}
+
+func getImageAPIKey() string {
+	if v := os.Getenv("IMAGE_API_KEY"); v != "" {
+		return v
+	}
+	return defaultImageAPIKey
 }
 
 func isAllowedProxyHost(rawURL string) bool {
@@ -35,8 +63,28 @@ func isAllowedProxyHost(rawURL string) bool {
 	return false
 }
 
+// replaceVideoHost replaces known CDN hosts in a video URL with the
+// configured video play base URL so clients can access videos directly.
+func replaceVideoHost(videoURL string) string {
+	playBase := getVideoPlayBaseURL()
+	for _, cdnHost := range cdnHosts {
+		// Try both https and http schemes
+		for _, scheme := range []string{"https://", "http://"} {
+			prefix := scheme + cdnHost
+			if strings.HasPrefix(videoURL, prefix) {
+				return playBase + videoURL[len(prefix):]
+			}
+		}
+	}
+	return videoURL
+}
+
 func makeProxyURL(originalURL string) string {
 	return proxyVideoPath + url.QueryEscape(originalURL)
+}
+
+func makeImageProxyURL(originalURL string) string {
+	return proxyImagePath + url.QueryEscape(originalURL)
 }
 
 // ProxyVideo godoc
@@ -170,8 +218,9 @@ func rewriteURIAttribute(line string, base *url.URL) string {
 	return line[:start] + proxied + line[end:]
 }
 
-// rewriteVideoURLs rewrites preview_video_url fields in the upstream API response
-// to route through our video proxy
+// rewriteVideoURLs rewrites preview_video_url and first_image fields in the
+// upstream API response. Video URLs get their CDN host replaced with the play
+// base URL for direct access; cover image URLs are routed through our image proxy.
 func rewriteVideoURLs(body []byte) []byte {
 	var data map[string]interface{}
 	if err := json.Unmarshal(body, &data); err != nil {
@@ -189,7 +238,10 @@ func rewriteVideoURLs(body []byte) []byte {
 			continue
 		}
 		if videoURL, ok := postMap["preview_video_url"].(string); ok && videoURL != "" {
-			postMap["preview_video_url"] = makeProxyURL(videoURL)
+			postMap["preview_video_url"] = replaceVideoHost(videoURL)
+		}
+		if imageURL, ok := postMap["first_image"].(string); ok && imageURL != "" {
+			postMap["first_image"] = makeImageProxyURL(imageURL)
 		}
 	}
 
@@ -198,4 +250,62 @@ func rewriteVideoURLs(body []byte) []byte {
 		return body
 	}
 	return rewritten
+}
+
+// ProxyImage godoc
+// @Summary Proxy cover image
+// @Description Proxies cover images from upstream, adding the required API key header
+// @Tags videos
+// @Produce octet-stream
+// @Param url query string true "Upstream image URL to proxy"
+// @Success 200
+// @Failure 400 {object} ErrorResponse
+// @Failure 403 {object} ErrorResponse
+// @Failure 502 {object} ErrorResponse
+// @Router /proxy/image [get]
+func ProxyImage(c *gin.Context) {
+	rawURL := c.Query("url")
+	if rawURL == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "missing url parameter"})
+		return
+	}
+
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid url"})
+		return
+	}
+
+	if !isAllowedProxyHost(rawURL) {
+		c.JSON(http.StatusForbidden, ErrorResponse{Error: "host not allowed"})
+		return
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, rawURL, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to create request"})
+		return
+	}
+	req.Header.Set("X-API-Key", getImageAPIKey())
+
+	resp, err := client.Do(req)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, ErrorResponse{Error: "failed to fetch image"})
+		return
+	}
+	defer resp.Body.Close()
+
+	contentType := resp.Header.Get("Content-Type")
+	c.Status(resp.StatusCode)
+	if contentType != "" {
+		c.Header("Content-Type", contentType)
+	}
+	if resp.ContentLength >= 0 {
+		c.Header("Content-Length", fmt.Sprintf("%d", resp.ContentLength))
+	}
+	c.Header("Cache-Control", "public, max-age=86400")
+	if _, err := io.Copy(c.Writer, resp.Body); err != nil {
+		log.Printf("proxy: error streaming image from %s: %v", parsedURL.Host, err)
+	}
 }

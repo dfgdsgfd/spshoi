@@ -34,9 +34,11 @@ func main() {
 	api := r.Group("/api")
 	{
 		api.GET("/videos", handlers.GetVideos)
+		api.POST("/videos/get-url", handlers.GetVideoURL)
 		api.POST("/videos/batch-toggle", handlers.BatchToggleVideos)
 		api.POST("/videos/batch-disable", handlers.BatchDisableVideos)
 		api.GET("/proxy/video", handlers.ProxyVideo)
+		api.GET("/proxy/image", handlers.ProxyImage)
 	}
 
 	// Video review page - embedded HTML

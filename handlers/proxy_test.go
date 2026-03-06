@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -108,12 +109,14 @@ func TestRewriteVideoURLs(t *testing.T) {
 			{
 				"id": 1,
 				"title": "Test Video",
-				"preview_video_url": "https://edgecdn2-tc.yuelk.com:30086/video/preview/index.m3u8?token=abc"
+				"preview_video_url": "https://edgecdn2-tc.yuelk.com:30086/video/preview/index.m3u8?token=abc",
+				"first_image": "https://v.yuelk.com/pima/wp-content/uploads/video/2025-11-13/abc/vod.webp"
 			},
 			{
 				"id": 2,
 				"title": "Video 2",
-				"preview_video_url": "https://edgecdn2-tc.yuelk.com:30086/video/preview2/index.m3u8?token=def"
+				"preview_video_url": "https://edgecdn2-tc.yuelk.com:30086/video/preview2/index.m3u8?token=def",
+				"first_image": "https://v.yuelk.com/pima/wp-content/uploads/video/2025-11-13/def/vod.webp"
 			}
 		],
 		"total_posts": 2,
@@ -123,14 +126,31 @@ func TestRewriteVideoURLs(t *testing.T) {
 	result := rewriteVideoURLs([]byte(input))
 	resultStr := string(result)
 
-	// Original CDN URLs should NOT be present
+	// Original CDN URLs should NOT be present in preview_video_url
 	if strings.Contains(resultStr, "edgecdn2-tc.yuelk.com:30086") {
 		t.Error("expected CDN URLs to be rewritten, but found original URL in output")
 	}
 
-	// Proxy URLs should be present
-	if !strings.Contains(resultStr, "/api/proxy/video?url=") {
-		t.Error("expected proxy URLs in output")
+	// Video URLs should use the play base URL
+	if !strings.Contains(resultStr, getVideoPlayBaseURL()) {
+		t.Errorf("expected video URLs to use play base URL %s", getVideoPlayBaseURL())
+	}
+
+	// Image URLs should use the image proxy path
+	if !strings.Contains(resultStr, "/api/proxy/image?url=") {
+		t.Error("expected image proxy URLs in output")
+	}
+
+	// Original image host should NOT be directly present
+	var data map[string]interface{}
+	json.Unmarshal(result, &data)
+	posts := data["posts"].([]interface{})
+	for _, p := range posts {
+		pm := p.(map[string]interface{})
+		imgURL := pm["first_image"].(string)
+		if strings.HasPrefix(imgURL, "https://v.yuelk.com") {
+			t.Error("expected first_image to be rewritten to proxy URL")
+		}
 	}
 }
 
@@ -198,5 +218,123 @@ func TestProxyVideo_AllowedHostUnreachable(t *testing.T) {
 	// Should return 502 (not 400 or 403) since the host is allowed but unreachable
 	if w.Code != http.StatusBadGateway {
 		t.Errorf("expected 502 for unreachable allowed host, got %d", w.Code)
+	}
+}
+
+func TestReplaceVideoHost(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "edgecdn2 host with port",
+			input:    "https://edgecdn2-tc.yuelk.com:30086/wp-content/uploads/video/preview/index.m3u8?token=abc",
+			expected: getVideoPlayBaseURL() + "/wp-content/uploads/video/preview/index.m3u8?token=abc",
+		},
+		{
+			name:     "edgeone host",
+			input:    "https://edgeone-cdn.yuelk.com/wp-content/uploads/video/720p/index.m3u8?token=def",
+			expected: getVideoPlayBaseURL() + "/wp-content/uploads/video/720p/index.m3u8?token=def",
+		},
+		{
+			name:     "unknown host unchanged",
+			input:    "https://example.com/video.m3u8",
+			expected: "https://example.com/video.m3u8",
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := replaceVideoHost(tt.input)
+			if got != tt.expected {
+				t.Errorf("replaceVideoHost(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestMakeImageProxyURL(t *testing.T) {
+	original := "https://v.yuelk.com/pima/wp-content/uploads/video/2025-11-13/abc/vod.webp"
+	result := makeImageProxyURL(original)
+
+	if !strings.HasPrefix(result, proxyImagePath) {
+		t.Errorf("expected image proxy URL to start with %s, got %s", proxyImagePath, result)
+	}
+
+	encoded := strings.TrimPrefix(result, proxyImagePath)
+	decoded, err := url.QueryUnescape(encoded)
+	if err != nil {
+		t.Fatalf("failed to decode image proxy URL: %v", err)
+	}
+	if decoded != original {
+		t.Errorf("expected decoded URL %q, got %q", original, decoded)
+	}
+}
+
+func TestProxyImage_MissingURL(t *testing.T) {
+	r := setupRouter()
+
+	req, _ := http.NewRequest(http.MethodGet, "/api/proxy/image", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestProxyImage_InvalidURL(t *testing.T) {
+	r := setupRouter()
+
+	req, _ := http.NewRequest(http.MethodGet, "/api/proxy/image?url=not-a-valid-url", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestProxyImage_DisallowedHost(t *testing.T) {
+	r := setupRouter()
+
+	req, _ := http.NewRequest(http.MethodGet, "/api/proxy/image?url="+url.QueryEscape("https://evil.com/image.webp"), nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for disallowed host, got %d", w.Code)
+	}
+}
+
+func TestGetVideoURL_InvalidBody(t *testing.T) {
+	r := setupRouter()
+
+	req, _ := http.NewRequest(http.MethodPost, "/api/videos/get-url", strings.NewReader("invalid"))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestGetVideoURL_MissingPostID(t *testing.T) {
+	r := setupRouter()
+
+	req, _ := http.NewRequest(http.MethodPost, "/api/videos/get-url", strings.NewReader(`{"quality":"720p"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for missing post_id, got %d", w.Code)
 	}
 }
