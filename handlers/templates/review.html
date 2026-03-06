@@ -243,6 +243,48 @@
         let hlsRetryCount = 0;
         const HLS_MAX_RETRIES = 3;
         let reviewedIds = [];
+        let pageCache = {}; // in-memory mirror of server-side page_cache.json
+
+        // --- Server-side page cache (JSON file) ---
+        async function loadPageCacheFromServer() {
+            try {
+                const resp = await fetch(API_BASE + '/review/pages');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    pageCache = data.pages || {};
+                } else {
+                    pageCache = {};
+                }
+            } catch {
+                pageCache = {};
+            }
+        }
+
+        async function savePageToServer(page, data) {
+            pageCache[String(page)] = data;
+            try {
+                await fetch(API_BASE + '/review/pages', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ page: String(page), data: data }),
+                });
+            } catch (e) {
+                console.warn('Failed to save page cache:', e);
+            }
+        }
+
+        function getCachedPage(page) {
+            return pageCache[String(page)] || null;
+        }
+
+        async function clearServerPageCache() {
+            pageCache = {};
+            try {
+                await fetch(API_BASE + '/review/pages', { method: 'DELETE' });
+            } catch (e) {
+                console.warn('Failed to clear page cache:', e);
+            }
+        }
 
         async function fetchReviewedIds() {
             try {
@@ -289,6 +331,7 @@
                 } catch {
                     reviewedIds = [];
                 }
+                await clearServerPageCache();
                 updateStats();
                 showToast('审核记录已清除', 'info');
                 currentPage = 1;
@@ -318,12 +361,20 @@
 
         async function loadVideos() {
             try {
-                const url = new URL(API_BASE + '/videos', window.location.origin);
-                url.searchParams.set('page', currentPage);
-                url.searchParams.set('per_page', '20');
-                url.searchParams.set('order', 'DESC');
-                const resp = await fetch(url);
-                const data = await resp.json();
+                // Check server-side JSON cache first (avoids re-fetching already loaded pages)
+                let data = getCachedPage(currentPage);
+                if (!data) {
+                    const url = new URL(API_BASE + '/videos', window.location.origin);
+                    url.searchParams.set('page', currentPage);
+                    url.searchParams.set('per_page', '20');
+                    url.searchParams.set('order', 'DESC');
+                    const resp = await fetch(url);
+                    data = await resp.json();
+                    // Save to server-side JSON for persistence across refreshes
+                    if (data.posts && data.posts.length > 0) {
+                        await savePageToServer(currentPage, data);
+                    }
+                }
                 if (data.posts && data.posts.length > 0) {
                     totalPages = data.total_pages || 1;
                     totalCount = data.total_posts || data.total || 0;
@@ -563,8 +614,9 @@
             displayCurrentVideo();
         }
 
-        // Init
+        // Init: load page cache from server JSON, then load reviewed IDs, then start from page 1
         (async () => {
+            await loadPageCacheFromServer();
             await fetchReviewedIds();
             updateStats();
             loadVideos();

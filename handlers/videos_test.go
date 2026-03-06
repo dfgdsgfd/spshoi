@@ -27,6 +27,9 @@ func setupRouter() *gin.Engine {
 		api.GET("/review/state", GetReviewState)
 		api.POST("/review/state", AddReviewedID)
 		api.DELETE("/review/state", ClearReviewState)
+		api.GET("/review/pages", GetPageCache)
+		api.POST("/review/pages", SavePageCache)
+		api.DELETE("/review/pages", ClearPageCache)
 	}
 	r.GET("/review", ReviewPage)
 	r.GET("/review.html", ReviewPage)
