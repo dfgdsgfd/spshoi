@@ -137,7 +137,7 @@ segment_001.ts
 					encoded := line[start : start+end]
 					decoded, err := url.QueryUnescape(encoded)
 					if err != nil {
-						t.Errorf("failed to decode enc.key URL: %v", err)
+						t.Fatalf("failed to decode enc.key URL: %v", err)
 					}
 					if !strings.HasSuffix(decoded, "/enc.key") {
 						t.Errorf("expected enc.key in decoded URL, got: %s", decoded)

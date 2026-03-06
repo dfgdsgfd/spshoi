@@ -49,7 +49,7 @@ func saveReviewState(state *ReviewState) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(getReviewStatePath(), data, 0644)
+	return os.WriteFile(getReviewStatePath(), data, 0600)
 }
 
 // GetReviewState godoc

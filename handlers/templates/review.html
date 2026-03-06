@@ -247,8 +247,12 @@
         async function fetchReviewedIds() {
             try {
                 const resp = await fetch(API_BASE + '/review/state');
-                const data = await resp.json();
-                reviewedIds = data.reviewed_ids || [];
+                if (resp.ok) {
+                    const data = await resp.json();
+                    reviewedIds = data.reviewed_ids || [];
+                } else {
+                    reviewedIds = [];
+                }
             } catch {
                 reviewedIds = [];
             }
@@ -269,7 +273,9 @@
                 const data = await resp.json();
                 reviewedIds = data.reviewed_ids || [];
             } catch {
-                reviewedIds.push(id);
+                if (!reviewedIds.includes(id)) {
+                    reviewedIds.push(id);
+                }
             }
             updateStats();
         }
