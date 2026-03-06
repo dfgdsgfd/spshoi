@@ -8,6 +8,7 @@ import (
 
 	_ "github.com/dfgdsgfd/spshoi/docs"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -17,10 +18,18 @@ import (
 // @version 1.0
 // @description A Go-Gin based API for video center management. Provides endpoints to list videos and batch toggle video enable/disable status.
 
-// @host localhost:8080
+// @schemes http https
 // @BasePath /api
 func main() {
 	r := gin.Default()
+
+	r.Use(cors.New(cors.Config{
+		AllowAllOrigins:  true,
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-API-KEY"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: false,
+	}))
 
 	api := r.Group("/api")
 	{

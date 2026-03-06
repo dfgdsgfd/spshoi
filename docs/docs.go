@@ -17,7 +17,7 @@ const docTemplate = `{
     "paths": {
         "/videos": {
             "get": {
-                "description": "Fetch video list from the upstream API with pagination, search, and sorting options",
+                "description": "Fetch video list from the upstream API with pagination and sorting options",
                 "consumes": [
                     "application/json"
                 ],
@@ -44,12 +44,6 @@ const docTemplate = `{
                         "default": 20,
                         "description": "Items per page",
                         "name": "per_page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Search keyword",
-                        "name": "search",
                         "in": "query"
                     },
                     {
@@ -234,9 +228,9 @@ const docTemplate = `{
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
-	Host:             "localhost:8080",
+	Host:             "",
 	BasePath:         "/api",
-	Schemes:          []string{},
+	Schemes:          []string{"http", "https"},
 	Title:            "Video Center API",
 	Description:      "A Go-Gin based API for video center management. Provides endpoints to list videos and batch toggle video enable/disable status.",
 	InfoInstanceName: "swagger",

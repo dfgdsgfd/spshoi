@@ -62,7 +62,6 @@ definitions:
     required:
     - post_id
     type: object
-host: localhost:8080
 info:
   contact: {}
   description: A Go-Gin based API for video center management. Provides endpoints
@@ -74,8 +73,8 @@ paths:
     get:
       consumes:
       - application/json
-      description: Fetch video list from the upstream API with pagination, search,
-        and sorting options
+      description: Fetch video list from the upstream API with pagination and sorting
+        options
       parameters:
       - default: 1
         description: Page number
@@ -90,10 +89,6 @@ paths:
         minimum: 1
         name: per_page
         type: integer
-      - description: Search keyword
-        in: query
-        name: search
-        type: string
       - default: DESC
         description: Sort order
         enum:
@@ -151,4 +146,7 @@ paths:
       summary: Batch toggle video enable/disable
       tags:
       - videos
+schemes:
+- http
+- https
 swagger: "2.0"

@@ -37,7 +37,7 @@ func TestGetVideos_DefaultParams(t *testing.T) {
 func TestGetVideos_WithParams(t *testing.T) {
 	r := setupRouter()
 
-	req, _ := http.NewRequest(http.MethodGet, "/api/videos?page=2&per_page=10&search=test&order=ASC", nil)
+	req, _ := http.NewRequest(http.MethodGet, "/api/videos?page=2&per_page=10&order=ASC", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 

@@ -1,4 +1,8 @@
 {
+    "schemes": [
+        "http",
+        "https"
+    ],
     "swagger": "2.0",
     "info": {
         "description": "A Go-Gin based API for video center management. Provides endpoints to list videos and batch toggle video enable/disable status.",
@@ -6,12 +10,11 @@
         "contact": {},
         "version": "1.0"
     },
-    "host": "localhost:8080",
     "basePath": "/api",
     "paths": {
         "/videos": {
             "get": {
-                "description": "Fetch video list from the upstream API with pagination, search, and sorting options",
+                "description": "Fetch video list from the upstream API with pagination and sorting options",
                 "consumes": [
                     "application/json"
                 ],
@@ -38,12 +41,6 @@
                         "default": 20,
                         "description": "Items per page",
                         "name": "per_page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Search keyword",
-                        "name": "search",
                         "in": "query"
                     },
                     {

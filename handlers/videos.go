@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	url_pkg "net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -72,13 +71,12 @@ type ErrorResponse struct {
 
 // GetVideos godoc
 // @Summary Get video center list
-// @Description Fetch video list from the upstream API with pagination, search, and sorting options
+// @Description Fetch video list from the upstream API with pagination and sorting options
 // @Tags videos
 // @Accept json
 // @Produce json
 // @Param page query int false "Page number" default(1) minimum(1)
 // @Param per_page query int false "Items per page" default(20) minimum(1) maximum(100)
-// @Param search query string false "Search keyword"
 // @Param order query string false "Sort order" Enums(ASC, DESC) default(DESC)
 // @Success 200 {object} VideoListResponse
 // @Failure 400 {object} ErrorResponse
@@ -98,7 +96,6 @@ func GetVideos(c *gin.Context) {
 		perPage = 100
 	}
 
-	search := c.Query("search")
 	order := strings.ToUpper(c.DefaultQuery("order", "DESC"))
 	if order != "ASC" && order != "DESC" {
 		order = "DESC"
@@ -106,9 +103,6 @@ func GetVideos(c *gin.Context) {
 
 	url := fmt.Sprintf("%s/pyvideo2/api/get_posts?page=%d&per_page=%d&sort_order=%s",
 		getBaseURL(), page, perPage, order)
-	if search != "" {
-		url += "&search=" + url_pkg.QueryEscape(search)
-	}
 
 	client := &http.Client{Timeout: 15 * time.Second}
 	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, url, nil)
