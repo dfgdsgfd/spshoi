@@ -382,7 +382,7 @@ func BatchToggleVideos(c *gin.Context) {
 			"enable":  video.Enable,
 		})
 
-		url := fmt.Sprintf("%s/pyvideo2/api/admin/video-enable-toggle", getBaseURL())
+		url := fmt.Sprintf("%s/pyvideo2/api/admin/video_enable_toggle", getBaseURL())
 		httpReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, url, bytes.NewReader(payload))
 		if err != nil {
 			result.Success = false
@@ -430,7 +430,7 @@ func BatchToggleVideos(c *gin.Context) {
 
 // BatchDisableVideos godoc
 // @Summary Batch disable videos
-// @Description Batch disable multiple videos by calling the upstream video-enable-toggle API with enable=false for each post ID
+// @Description Batch disable multiple videos by calling the upstream video_enable_toggle API with enable=false for each post ID
 // @Tags videos
 // @Accept json
 // @Produce json
@@ -461,7 +461,7 @@ func BatchDisableVideos(c *gin.Context) {
 			"enable":  false,
 		})
 
-		url := fmt.Sprintf("%s/pyvideo2/api/admin/video-enable-toggle", getBaseURL())
+		url := fmt.Sprintf("%s/pyvideo2/api/admin/video_enable_toggle", getBaseURL())
 		httpReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, url, bytes.NewReader(payload))
 		if err != nil {
 			result.Success = false

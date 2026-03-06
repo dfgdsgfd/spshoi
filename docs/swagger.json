@@ -12,6 +12,188 @@
     },
     "basePath": "/api",
     "paths": {
+        "/proxy/image": {
+            "get": {
+                "description": "Proxies cover images from upstream, adding the required API key header",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "videos"
+                ],
+                "summary": "Proxy cover image",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Upstream image URL to proxy",
+                        "name": "url",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/proxy/video": {
+            "get": {
+                "description": "Proxies video content (m3u8 playlists and ts segments) from upstream CDN. Rewrites URLs in m3u8 playlists to route through the proxy.",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "videos"
+                ],
+                "summary": "Proxy video content",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Upstream video URL to proxy",
+                        "name": "url",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/review/state": {
+            "get": {
+                "description": "Returns the list of reviewed video IDs stored in server-side JSON file",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "review"
+                ],
+                "summary": "Get review state",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ReviewState"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Add a video ID to the reviewed list in server-side JSON file",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "review"
+                ],
+                "summary": "Add reviewed video ID",
+                "parameters": [
+                    {
+                        "description": "Post ID to add",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ReviewState"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Clear all reviewed video IDs from server-side JSON file",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "review"
+                ],
+                "summary": "Clear review state",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ReviewState"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/videos": {
             "get": {
                 "description": "Fetch video list from the upstream API with pagination, search, and sorting options",
@@ -85,7 +267,7 @@
         },
         "/videos/batch-disable": {
             "post": {
-                "description": "Batch disable multiple videos by calling the upstream video-enable-toggle API with enable=false for each post ID",
+                "description": "Batch disable multiple videos by calling the upstream video_enable_toggle API with enable=false for each post ID",
                 "consumes": [
                     "application/json"
                 ],
@@ -158,6 +340,52 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/handlers.BatchToggleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/videos/get-url": {
+            "post": {
+                "description": "Fetch the full (non-preview) video URL from the upstream API for a given post ID and quality",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "videos"
+                ],
+                "summary": "Get full video URL",
+                "parameters": [
+                    {
+                        "description": "Post ID and quality",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.GetVideoURLRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.GetVideoURLResponse"
                         }
                     },
                     "400": {
@@ -271,6 +499,53 @@
             "properties": {
                 "error": {
                     "type": "string"
+                }
+            }
+        },
+        "handlers.GetVideoURLRequest": {
+            "type": "object",
+            "required": [
+                "post_id"
+            ],
+            "properties": {
+                "post_id": {
+                    "type": "integer",
+                    "example": 11434
+                },
+                "quality": {
+                    "type": "string",
+                    "example": "720p"
+                }
+            }
+        },
+        "handlers.GetVideoURLResponse": {
+            "type": "object",
+            "properties": {
+                "duration": {
+                    "type": "number"
+                },
+                "post_id": {
+                    "type": "integer"
+                },
+                "quality": {
+                    "type": "string"
+                },
+                "subtitle_url": {
+                    "type": "string"
+                },
+                "video_url": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.ReviewState": {
+            "type": "object",
+            "properties": {
+                "reviewed_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 }
             }
         },
