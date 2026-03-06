@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	url_pkg "net/url"
@@ -148,7 +149,10 @@ func GetVideoURL(c *gin.Context) {
 	}
 
 	if videoURL, ok := upstream["video_url"].(string); ok && videoURL != "" {
-		upstream["video_url"] = makeProxyURL(replaceVideoHost(videoURL))
+		upstream["video_url"] = makeProxyURL(replaceVideoHost(html.UnescapeString(videoURL)))
+	}
+	if subtitleURL, ok := upstream["subtitle_url"].(string); ok && subtitleURL != "" {
+		upstream["subtitle_url"] = html.UnescapeString(subtitleURL)
 	}
 
 	rewritten, err := json.Marshal(upstream)

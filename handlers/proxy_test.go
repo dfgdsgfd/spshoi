@@ -402,3 +402,62 @@ func TestGetVideoURL_MissingPostID(t *testing.T) {
 		t.Errorf("expected 400 for missing post_id, got %d", w.Code)
 	}
 }
+
+func TestGetVideoURL_HTMLEntityDecoding(t *testing.T) {
+	// Mock upstream server that returns video_url with HTML entities (like the real API does)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Simulate the upstream response with &amp; HTML entities in the URL
+		w.Write([]byte(`{"video_url":"https://edgeone-cdn.yuelk.com/wp-content/uploads/video/2026-02-04/72035dfd3e_RTmd7E/720p_c57bc6/index.m3u8?uid=315&amp;expires=1772820302&amp;token=rVq6GCweF2Qt0fRAFroIMta7KOQp","subtitle_url":"","quality":"720p","post_id":11434,"duration":2167.432}`))
+	}))
+	defer upstream.Close()
+
+	// Point the handler to our mock upstream
+	t.Setenv("VIDEO_API_BASE_URL", upstream.URL)
+
+	r := setupRouter()
+	req, _ := http.NewRequest(http.MethodPost, "/api/videos/get-url", strings.NewReader(`{"post_id":11434,"quality":"720p"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	videoURL, ok := resp["video_url"].(string)
+	if !ok || videoURL == "" {
+		t.Fatal("expected video_url in response")
+	}
+
+	// The video_url should be wrapped in proxy path
+	if !strings.HasPrefix(videoURL, proxyVideoPath) {
+		t.Errorf("expected video_url to start with proxy path, got: %s", videoURL)
+	}
+
+	// Decode the proxied URL and verify HTML entities are decoded (& not &amp;)
+	encoded := strings.TrimPrefix(videoURL, proxyVideoPath)
+	decoded, err := url.QueryUnescape(encoded)
+	if err != nil {
+		t.Fatalf("failed to decode proxy URL: %v", err)
+	}
+
+	if strings.Contains(decoded, "&amp;") {
+		t.Errorf("expected HTML entities to be decoded, but found &amp; in URL: %s", decoded)
+	}
+
+	// Verify that the CDN host was replaced with play base URL
+	if !strings.HasPrefix(decoded, getVideoPlayBaseURL()) {
+		t.Errorf("expected URL to start with play base URL %s, got: %s", getVideoPlayBaseURL(), decoded)
+	}
+
+	// Verify the query parameters are properly decoded
+	if !strings.Contains(decoded, "uid=315&expires=") {
+		t.Errorf("expected decoded query params with & separator, got: %s", decoded)
+	}
+}
