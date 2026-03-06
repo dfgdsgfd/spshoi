@@ -313,7 +313,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: Batch disable multiple videos by calling the upstream video_enable_toggle
+      description: Batch disable multiple videos by calling the upstream video-enable-toggle
         API with enable=false for each post ID
       parameters:
       - description: List of post IDs to disable

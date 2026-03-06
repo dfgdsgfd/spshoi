@@ -270,7 +270,7 @@ const docTemplate = `{
         },
         "/videos/batch-disable": {
             "post": {
-                "description": "Batch disable multiple videos by calling the upstream video_enable_toggle API with enable=false for each post ID",
+                "description": "Batch disable multiple videos by calling the upstream video-enable-toggle API with enable=false for each post ID",
                 "consumes": [
                     "application/json"
                 ],
