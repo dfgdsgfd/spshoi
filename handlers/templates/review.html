@@ -402,7 +402,7 @@
             setButtonsEnabled(true);
 
             // Automatically fetch and play full 720p video
-            startPlayback();
+            startPlayback().catch(() => {});
         }
 
         async function startPlayback() {
