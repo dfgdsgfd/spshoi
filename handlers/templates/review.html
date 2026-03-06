@@ -243,46 +243,37 @@
         let hlsRetryCount = 0;
         const HLS_MAX_RETRIES = 3;
         let reviewedIds = [];
-        let pageCache = {}; // in-memory mirror of server-side page_cache.json
 
-        // --- Server-side page cache (JSON file) ---
-        async function loadPageCacheFromServer() {
+        // --- Server-side page number persistence ---
+        async function loadPageNumberFromServer() {
             try {
                 const resp = await fetch(API_BASE + '/review/pages');
                 if (resp.ok) {
                     const data = await resp.json();
-                    pageCache = data.pages || {};
-                } else {
-                    pageCache = {};
+                    currentPage = data.current_page || 1;
                 }
             } catch {
-                pageCache = {};
+                // keep default currentPage = 1
             }
         }
 
-        async function savePageToServer(page, data) {
-            pageCache[String(page)] = data;
+        async function savePageNumberToServer(page) {
             try {
                 await fetch(API_BASE + '/review/pages', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ page: String(page), data: data }),
+                    body: JSON.stringify({ current_page: page }),
                 });
             } catch (e) {
-                console.warn('Failed to save page cache:', e);
+                console.warn('Failed to save page number:', e);
             }
         }
 
-        function getCachedPage(page) {
-            return pageCache[String(page)] || null;
-        }
-
-        async function clearServerPageCache() {
-            pageCache = {};
+        async function resetServerPageNumber() {
             try {
                 await fetch(API_BASE + '/review/pages', { method: 'DELETE' });
             } catch (e) {
-                console.warn('Failed to clear page cache:', e);
+                console.warn('Failed to reset page number:', e);
             }
         }
 
@@ -331,7 +322,7 @@
                 } catch {
                     reviewedIds = [];
                 }
-                await clearServerPageCache();
+                await resetServerPageNumber();
                 updateStats();
                 showToast('审核记录已清除', 'info');
                 currentPage = 1;
@@ -361,20 +352,14 @@
 
         async function loadVideos() {
             try {
-                // Check server-side JSON cache first (avoids re-fetching already loaded pages)
-                let data = getCachedPage(currentPage);
-                if (!data) {
-                    const url = new URL(API_BASE + '/videos', window.location.origin);
-                    url.searchParams.set('page', currentPage);
-                    url.searchParams.set('per_page', '20');
-                    url.searchParams.set('order', 'DESC');
-                    const resp = await fetch(url);
-                    data = await resp.json();
-                    // Save to server-side JSON for persistence across refreshes
-                    if (data.posts && data.posts.length > 0) {
-                        await savePageToServer(currentPage, data);
-                    }
-                }
+                const url = new URL(API_BASE + '/videos', window.location.origin);
+                url.searchParams.set('page', currentPage);
+                url.searchParams.set('per_page', '20');
+                url.searchParams.set('order', 'DESC');
+                const resp = await fetch(url);
+                const data = await resp.json();
+                // Save current page number to server for persistence across refreshes
+                await savePageNumberToServer(currentPage);
                 if (data.posts && data.posts.length > 0) {
                     totalPages = data.total_pages || 1;
                     totalCount = data.total_posts || data.total || 0;
@@ -614,9 +599,9 @@
             displayCurrentVideo();
         }
 
-        // Init: load page cache from server JSON, then load reviewed IDs, then start from page 1
+        // Init: load remembered page number from server, then load reviewed IDs, then start
         (async () => {
-            await loadPageCacheFromServer();
+            await loadPageNumberFromServer();
             await fetchReviewedIds();
             updateStats();
             loadVideos();

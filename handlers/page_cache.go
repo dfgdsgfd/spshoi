@@ -11,9 +11,9 @@ import (
 
 const defaultPageCachePath = "page_cache.json"
 
-// PageCacheState stores cached page data keyed by page number
+// PageCacheState stores only the current page number
 type PageCacheState struct {
-	Pages map[string]json.RawMessage `json:"pages"`
+	CurrentPage int `json:"current_page"`
 }
 
 var pageCacheMu sync.Mutex
@@ -30,21 +30,21 @@ func loadPageCache() (*PageCacheState, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &PageCacheState{Pages: map[string]json.RawMessage{}}, nil
+			return &PageCacheState{CurrentPage: 1}, nil
 		}
 		return nil, err
 	}
 	var state PageCacheState
 	if err := json.Unmarshal(data, &state); err != nil {
-		return &PageCacheState{Pages: map[string]json.RawMessage{}}, nil
+		return &PageCacheState{CurrentPage: 1}, nil
 	}
-	if state.Pages == nil {
-		state.Pages = map[string]json.RawMessage{}
+	if state.CurrentPage < 1 {
+		state.CurrentPage = 1
 	}
 	return &state, nil
 }
 
-func savePageCache(state *PageCacheState) error {
+func savePageCacheState(state *PageCacheState) error {
 	data, err := json.Marshal(state)
 	if err != nil {
 		return err
@@ -53,8 +53,8 @@ func savePageCache(state *PageCacheState) error {
 }
 
 // GetPageCache godoc
-// @Summary Get cached page data
-// @Description Returns all cached video page data stored in server-side JSON file
+// @Summary Get remembered page number
+// @Description Returns the remembered current page number from server-side JSON file
 // @Tags review
 // @Produce json
 // @Success 200 {object} PageCacheState
@@ -66,27 +66,26 @@ func GetPageCache(c *gin.Context) {
 
 	state, err := loadPageCache()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to load page cache: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to load page state: " + err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, state)
 }
 
 // SavePageCache godoc
-// @Summary Save a page of video data
-// @Description Save a page's API response data to server-side JSON file
+// @Summary Save current page number
+// @Description Save the current page number to server-side JSON file
 // @Tags review
 // @Accept json
 // @Produce json
-// @Param request body object true "Page number and data" example({"page": "1", "data": {}})
-// @Success 200 {object} map[string]string
+// @Param request body object true "Current page number" example({"current_page": 1})
+// @Success 200 {object} PageCacheState
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /review/pages [post]
 func SavePageCache(c *gin.Context) {
 	var req struct {
-		Page string          `json:"page" binding:"required"`
-		Data json.RawMessage `json:"data" binding:"required"`
+		CurrentPage int `json:"current_page" binding:"required,min=1"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid request: " + err.Error()})
@@ -96,24 +95,18 @@ func SavePageCache(c *gin.Context) {
 	pageCacheMu.Lock()
 	defer pageCacheMu.Unlock()
 
-	state, err := loadPageCache()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to load page cache: " + err.Error()})
+	state := &PageCacheState{CurrentPage: req.CurrentPage}
+	if err := savePageCacheState(state); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to save page state: " + err.Error()})
 		return
 	}
 
-	state.Pages[req.Page] = req.Data
-	if err := savePageCache(state); err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to save page cache: " + err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	c.JSON(http.StatusOK, state)
 }
 
 // ClearPageCache godoc
-// @Summary Clear cached page data
-// @Description Clear all cached video page data from server-side JSON file
+// @Summary Reset page number
+// @Description Reset the remembered page number back to 1
 // @Tags review
 // @Produce json
 // @Success 200 {object} PageCacheState
@@ -123,9 +116,9 @@ func ClearPageCache(c *gin.Context) {
 	pageCacheMu.Lock()
 	defer pageCacheMu.Unlock()
 
-	state := &PageCacheState{Pages: map[string]json.RawMessage{}}
-	if err := savePageCache(state); err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to save page cache: " + err.Error()})
+	state := &PageCacheState{CurrentPage: 1}
+	if err := savePageCacheState(state); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to save page state: " + err.Error()})
 		return
 	}
 
