@@ -36,6 +36,7 @@ func main() {
 		api.GET("/videos", handlers.GetVideos)
 		api.POST("/videos/batch-toggle", handlers.BatchToggleVideos)
 		api.POST("/videos/batch-disable", handlers.BatchDisableVideos)
+		api.GET("/proxy/video", handlers.ProxyVideo)
 	}
 
 	// Video review page - embedded HTML

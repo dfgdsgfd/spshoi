@@ -18,6 +18,7 @@ func setupRouter() *gin.Engine {
 		api.GET("/videos", GetVideos)
 		api.POST("/videos/batch-toggle", BatchToggleVideos)
 		api.POST("/videos/batch-disable", BatchDisableVideos)
+		api.GET("/proxy/video", ProxyVideo)
 	}
 	r.GET("/review", ReviewPage)
 	r.GET("/review.html", ReviewPage)

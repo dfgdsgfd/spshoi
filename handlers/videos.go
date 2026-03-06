@@ -156,7 +156,9 @@ func GetVideos(c *gin.Context) {
 		return
 	}
 
-	c.Data(resp.StatusCode, "application/json", body)
+	// Rewrite video URLs to go through our proxy so browsers can access them
+	rewritten := rewriteVideoURLs(body)
+	c.Data(resp.StatusCode, "application/json", rewritten)
 }
 
 // BatchToggleVideos godoc
