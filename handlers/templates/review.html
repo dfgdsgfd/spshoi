@@ -251,7 +251,11 @@
 
         async function loadVideos() {
             try {
-                const resp = await fetch(API_BASE + '/videos?page=' + currentPage + '&per_page=20&order=DESC');
+                const url = new URL(API_BASE + '/videos', window.location.origin);
+                url.searchParams.set('page', currentPage);
+                url.searchParams.set('per_page', '20');
+                url.searchParams.set('order', 'DESC');
+                const resp = await fetch(url);
                 const data = await resp.json();
                 if (data.posts && data.posts.length > 0) {
                     totalPages = data.total_pages || 1;
@@ -389,13 +393,13 @@
                 const data = await resp.json();
                 if (resp.ok && data.disabled > 0) {
                     addReviewedId(video.id);
-                    showToast('已拒绝并禁用: ' + video.title, 'error');
+                    showToast(`已拒绝并禁用: ${video.title}`, 'error');
                 } else {
                     addReviewedId(video.id);
-                    showToast('拒绝操作已记录 (上游: ' + (data.results?.[0]?.message || 'unknown') + ')', 'info');
+                    showToast(`拒绝操作已记录 (上游: ${data.results?.[0]?.message || 'unknown'})`, 'info');
                 }
             } catch (err) {
-                showToast('禁用请求失败: ' + err.message, 'error');
+                showToast(`禁用请求失败: ${err.message}`, 'error');
                 setButtonsEnabled(true);
                 return;
             }
