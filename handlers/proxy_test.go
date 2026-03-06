@@ -234,6 +234,54 @@ func TestRewriteVideoURLs_NoPosts(t *testing.T) {
 	}
 }
 
+func TestRewriteVideoURLs_WithVideoURL(t *testing.T) {
+	input := `{
+		"posts": [
+			{
+				"id": 1,
+				"title": "Test Video",
+				"preview_video_url": "https://edgecdn2-tc.yuelk.com:30086/video/preview/index.m3u8?token=abc",
+				"video_url": "https://edgecdn2-tc.yuelk.com:30086/video/720p_abc123/index.m3u8?token=def",
+				"first_image": "https://v.yuelk.com/pima/wp-content/uploads/video/2025-11-13/abc/vod.webp"
+			}
+		]
+	}`
+
+	result := rewriteVideoURLs([]byte(input))
+	var data map[string]interface{}
+	json.Unmarshal(result, &data)
+	posts := data["posts"].([]interface{})
+	pm := posts[0].(map[string]interface{})
+
+	// video_url should be rewritten through proxy
+	videoURL, ok := pm["video_url"].(string)
+	if !ok || videoURL == "" {
+		t.Fatal("expected video_url to be present")
+	}
+	if !strings.HasPrefix(videoURL, proxyVideoPath) {
+		t.Errorf("expected video_url to start with proxy path, got: %s", videoURL)
+	}
+
+	// Decode and check the internal URL uses play base
+	encoded := strings.TrimPrefix(videoURL, proxyVideoPath)
+	decoded, err := url.QueryUnescape(encoded)
+	if err != nil {
+		t.Fatalf("failed to decode video_url: %v", err)
+	}
+	if !strings.HasPrefix(decoded, getVideoPlayBaseURL()) {
+		t.Errorf("expected proxied video_url to use play base URL, got: %s", decoded)
+	}
+	if !strings.Contains(decoded, "720p_abc123") {
+		t.Errorf("expected 720p path in video_url, got: %s", decoded)
+	}
+
+	// preview_video_url should also still be rewritten
+	previewURL := pm["preview_video_url"].(string)
+	if !strings.HasPrefix(previewURL, proxyVideoPath) {
+		t.Errorf("expected preview_video_url to start with proxy path, got: %s", previewURL)
+	}
+}
+
 func TestProxyVideo_MissingURL(t *testing.T) {
 	r := setupRouter()
 

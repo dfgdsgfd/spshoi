@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -159,6 +161,97 @@ func GetVideoURL(c *gin.Context) {
 	c.Data(http.StatusOK, "application/json", rewritten)
 }
 
+// fetchVideoURL fetches the video URL for a given post ID and quality from the
+// upstream API. Returns the raw video URL or empty string on failure.
+func fetchVideoURL(ctx context.Context, postID int, quality string) string {
+	payload, _ := json.Marshal(map[string]interface{}{
+		"post_id": postID,
+		"quality": quality,
+	})
+
+	u := fmt.Sprintf("%s/pyvideo2/get-video-url", getBaseURL())
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(payload))
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-API-KEY", getAPIKey())
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return ""
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return ""
+	}
+
+	if videoURL, ok := result["video_url"].(string); ok {
+		return videoURL
+	}
+	return ""
+}
+
+// enrichWithVideoURLs fetches 720p video URLs for each post in the upstream
+// response and adds them as "video_url" fields. The fetches run in parallel
+// with a bounded timeout so the video list response is not overly delayed.
+func enrichWithVideoURLs(ctx context.Context, body []byte) []byte {
+	var data map[string]interface{}
+	if err := json.Unmarshal(body, &data); err != nil {
+		return body
+	}
+
+	posts, ok := data["posts"].([]interface{})
+	if !ok || len(posts) == 0 {
+		return body
+	}
+
+	// Use a derived context with a timeout so enrichment doesn't block forever
+	enrichCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	var wg sync.WaitGroup
+	for _, post := range posts {
+		postMap, ok := post.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		postID, ok := postMap["id"].(float64) // JSON numbers are float64
+		if !ok {
+			continue
+		}
+
+		wg.Add(1)
+		go func(pm map[string]interface{}, id int) {
+			defer wg.Done()
+			videoURL := fetchVideoURL(enrichCtx, id, "720p")
+			if videoURL != "" {
+				pm["video_url"] = videoURL
+			}
+		}(postMap, int(postID))
+	}
+	wg.Wait()
+
+	enriched, err := json.Marshal(data)
+	if err != nil {
+		return body
+	}
+	return enriched
+}
+
 // BatchDisableRequest represents the request body for batch disable
 type BatchDisableRequest struct {
 	PostIDs []int `json:"post_ids" binding:"required,min=1" example:"1,2,3"`
@@ -246,8 +339,11 @@ func GetVideos(c *gin.Context) {
 		return
 	}
 
+	// Enrich posts with 720p video URLs fetched in parallel from upstream
+	enriched := enrichWithVideoURLs(c.Request.Context(), body)
+
 	// Rewrite video URLs to go through our proxy so browsers can access them
-	rewritten := rewriteVideoURLs(body)
+	rewritten := rewriteVideoURLs(enriched)
 	c.Data(resp.StatusCode, "application/json", rewritten)
 }
 
