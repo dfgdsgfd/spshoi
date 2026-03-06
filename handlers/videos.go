@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	url_pkg "net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 
 const (
 	defaultBaseURL = "https://v.yuelk.com"
+	defaultAPIKey  = "ef13c2bdf8cd8550ed4c37c323a558c9985d6d928d39a3b53bed864460221d56"
 )
 
 func getBaseURL() string {
@@ -26,7 +28,10 @@ func getBaseURL() string {
 }
 
 func getAPIKey() string {
-	return os.Getenv("VIDEO_API_KEY")
+	if v := os.Getenv("VIDEO_API_KEY"); v != "" {
+		return v
+	}
+	return defaultAPIKey
 }
 
 // VideoListResponse represents the response from the video list API
@@ -64,6 +69,26 @@ type BatchToggleResponse struct {
 	Results []ToggleResult `json:"results"`
 }
 
+// BatchDisableRequest represents the request body for batch disable
+type BatchDisableRequest struct {
+	PostIDs []int `json:"post_ids" binding:"required,min=1" example:"1,2,3"`
+}
+
+// DisableResult represents the result of a single disable operation
+type DisableResult struct {
+	PostID  int    `json:"post_id"`
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+// BatchDisableResponse represents the response for batch disable
+type BatchDisableResponse struct {
+	Disabled int             `json:"disabled"`
+	Failed   int             `json:"failed"`
+	Total    int             `json:"total"`
+	Results  []DisableResult `json:"results"`
+}
+
 // ErrorResponse represents an error response
 type ErrorResponse struct {
 	Error string `json:"error"`
@@ -71,12 +96,13 @@ type ErrorResponse struct {
 
 // GetVideos godoc
 // @Summary Get video center list
-// @Description Fetch video list from the upstream API with pagination and sorting options
+// @Description Fetch video list from the upstream API with pagination, search, and sorting options
 // @Tags videos
 // @Accept json
 // @Produce json
 // @Param page query int false "Page number" default(1) minimum(1)
 // @Param per_page query int false "Items per page" default(20) minimum(1) maximum(100)
+// @Param search query string false "Search keyword"
 // @Param order query string false "Sort order" Enums(ASC, DESC) default(DESC)
 // @Success 200 {object} VideoListResponse
 // @Failure 400 {object} ErrorResponse
@@ -96,6 +122,7 @@ func GetVideos(c *gin.Context) {
 		perPage = 100
 	}
 
+	search := c.Query("search")
 	order := strings.ToUpper(c.DefaultQuery("order", "DESC"))
 	if order != "ASC" && order != "DESC" {
 		order = "DESC"
@@ -103,6 +130,9 @@ func GetVideos(c *gin.Context) {
 
 	url := fmt.Sprintf("%s/pyvideo2/api/get_posts?page=%d&per_page=%d&sort_order=%s",
 		getBaseURL(), page, perPage, order)
+	if search != "" {
+		url += "&search=" + url_pkg.QueryEscape(search)
+	}
 
 	client := &http.Client{Timeout: 15 * time.Second}
 	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, url, nil)
@@ -206,5 +236,84 @@ func BatchToggleVideos(c *gin.Context) {
 		Failed:  failedCount,
 		Total:   len(req.Videos),
 		Results: results,
+	})
+}
+
+// BatchDisableVideos godoc
+// @Summary Batch disable videos
+// @Description Batch disable multiple videos by calling the upstream video-enable-toggle API with enable=false for each post ID
+// @Tags videos
+// @Accept json
+// @Produce json
+// @Param request body BatchDisableRequest true "List of post IDs to disable"
+// @Success 200 {object} BatchDisableResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 502 {object} ErrorResponse
+// @Router /videos/batch-disable [post]
+func BatchDisableVideos(c *gin.Context) {
+	var req BatchDisableRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid request: " + err.Error()})
+		return
+	}
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	results := make([]DisableResult, 0, len(req.PostIDs))
+	disabledCount := 0
+	failedCount := 0
+
+	for _, postID := range req.PostIDs {
+		result := DisableResult{
+			PostID: postID,
+		}
+
+		payload, _ := json.Marshal(map[string]interface{}{
+			"post_id": postID,
+			"enable":  false,
+		})
+
+		url := fmt.Sprintf("%s/pyvideo2/api/admin/video-enable-toggle", getBaseURL())
+		httpReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, url, bytes.NewReader(payload))
+		if err != nil {
+			result.Success = false
+			result.Message = "failed to create request"
+			failedCount++
+			results = append(results, result)
+			continue
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("Accept", "application/json")
+		httpReq.Header.Set("X-API-KEY", getAPIKey())
+
+		resp, err := client.Do(httpReq)
+		if err != nil {
+			result.Success = false
+			result.Message = "failed to call upstream API"
+			failedCount++
+			results = append(results, result)
+			continue
+		}
+
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if resp.StatusCode == http.StatusOK {
+			result.Success = true
+			result.Message = "disabled"
+			disabledCount++
+		} else {
+			result.Success = false
+			result.Message = fmt.Sprintf("upstream returned %d: %s", resp.StatusCode, string(body))
+			failedCount++
+		}
+
+		results = append(results, result)
+	}
+
+	c.JSON(http.StatusOK, BatchDisableResponse{
+		Disabled: disabledCount,
+		Failed:   failedCount,
+		Total:    len(req.PostIDs),
+		Results:  results,
 	})
 }

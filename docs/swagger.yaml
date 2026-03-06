@@ -1,5 +1,32 @@
 basePath: /api
 definitions:
+  handlers.BatchDisableRequest:
+    properties:
+      post_ids:
+        example:
+        - 1
+        - 2
+        - 3
+        items:
+          type: integer
+        minItems: 1
+        type: array
+    required:
+    - post_ids
+    type: object
+  handlers.BatchDisableResponse:
+    properties:
+      disabled:
+        type: integer
+      failed:
+        type: integer
+      results:
+        items:
+          $ref: '#/definitions/handlers.DisableResult'
+        type: array
+      total:
+        type: integer
+    type: object
   handlers.BatchToggleRequest:
     properties:
       videos:
@@ -22,6 +49,15 @@ definitions:
         type: integer
       total:
         type: integer
+    type: object
+  handlers.DisableResult:
+    properties:
+      message:
+        type: string
+      post_id:
+        type: integer
+      success:
+        type: boolean
     type: object
   handlers.ErrorResponse:
     properties:
@@ -73,8 +109,8 @@ paths:
     get:
       consumes:
       - application/json
-      description: Fetch video list from the upstream API with pagination and sorting
-        options
+      description: Fetch video list from the upstream API with pagination, search,
+        and sorting options
       parameters:
       - default: 1
         description: Page number
@@ -89,6 +125,10 @@ paths:
         minimum: 1
         name: per_page
         type: integer
+      - description: Search keyword
+        in: query
+        name: search
+        type: string
       - default: DESC
         description: Sort order
         enum:
@@ -113,6 +153,37 @@ paths:
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
       summary: Get video center list
+      tags:
+      - videos
+  /videos/batch-disable:
+    post:
+      consumes:
+      - application/json
+      description: Batch disable multiple videos by calling the upstream video-enable-toggle
+        API with enable=false for each post ID
+      parameters:
+      - description: List of post IDs to disable
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.BatchDisableRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.BatchDisableResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Batch disable videos
       tags:
       - videos
   /videos/batch-toggle:

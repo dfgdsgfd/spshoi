@@ -17,7 +17,7 @@ const docTemplate = `{
     "paths": {
         "/videos": {
             "get": {
-                "description": "Fetch video list from the upstream API with pagination and sorting options",
+                "description": "Fetch video list from the upstream API with pagination, search, and sorting options",
                 "consumes": [
                     "application/json"
                 ],
@@ -47,6 +47,12 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "string",
+                        "description": "Search keyword",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
                         "enum": [
                             "ASC",
                             "DESC"
@@ -63,6 +69,52 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/handlers.VideoListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/videos/batch-disable": {
+            "post": {
+                "description": "Batch disable multiple videos by calling the upstream video-enable-toggle API with enable=false for each post ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "videos"
+                ],
+                "summary": "Batch disable videos",
+                "parameters": [
+                    {
+                        "description": "List of post IDs to disable",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.BatchDisableRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.BatchDisableResponse"
                         }
                     },
                     "400": {
@@ -128,6 +180,46 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "handlers.BatchDisableRequest": {
+            "type": "object",
+            "required": [
+                "post_ids"
+            ],
+            "properties": {
+                "post_ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "integer"
+                    },
+                    "example": [
+                        1,
+                        2,
+                        3
+                    ]
+                }
+            }
+        },
+        "handlers.BatchDisableResponse": {
+            "type": "object",
+            "properties": {
+                "disabled": {
+                    "type": "integer"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handlers.DisableResult"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "handlers.BatchToggleRequest": {
             "type": "object",
             "required": [
@@ -160,6 +252,20 @@ const docTemplate = `{
                 },
                 "total": {
                     "type": "integer"
+                }
+            }
+        },
+        "handlers.DisableResult": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "post_id": {
+                    "type": "integer"
+                },
+                "success": {
+                    "type": "boolean"
                 }
             }
         },

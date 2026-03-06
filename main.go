@@ -35,6 +35,7 @@ func main() {
 	{
 		api.GET("/videos", handlers.GetVideos)
 		api.POST("/videos/batch-toggle", handlers.BatchToggleVideos)
+		api.POST("/videos/batch-disable", handlers.BatchDisableVideos)
 	}
 
 	// Swagger docs - no authentication required

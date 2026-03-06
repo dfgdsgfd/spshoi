@@ -17,6 +17,7 @@ func setupRouter() *gin.Engine {
 	{
 		api.GET("/videos", GetVideos)
 		api.POST("/videos/batch-toggle", BatchToggleVideos)
+		api.POST("/videos/batch-disable", BatchDisableVideos)
 	}
 	return r
 }
@@ -37,7 +38,7 @@ func TestGetVideos_DefaultParams(t *testing.T) {
 func TestGetVideos_WithParams(t *testing.T) {
 	r := setupRouter()
 
-	req, _ := http.NewRequest(http.MethodGet, "/api/videos?page=2&per_page=10&order=ASC", nil)
+	req, _ := http.NewRequest(http.MethodGet, "/api/videos?page=2&per_page=10&search=test&order=ASC", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -114,5 +115,73 @@ func TestBatchToggleVideos_ValidRequest(t *testing.T) {
 		if resp.Total != 2 {
 			t.Errorf("expected total 2, got %d", resp.Total)
 		}
+	}
+}
+
+func TestBatchDisableVideos_InvalidBody(t *testing.T) {
+	r := setupRouter()
+
+	req, _ := http.NewRequest(http.MethodPost, "/api/videos/batch-disable", bytes.NewBufferString("invalid"))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestBatchDisableVideos_EmptyPostIDs(t *testing.T) {
+	r := setupRouter()
+
+	body := BatchDisableRequest{PostIDs: []int{}}
+	jsonBody, _ := json.Marshal(body)
+	req, _ := http.NewRequest(http.MethodPost, "/api/videos/batch-disable", bytes.NewBuffer(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for empty post_ids, got %d", w.Code)
+	}
+}
+
+func TestBatchDisableVideos_ValidRequest(t *testing.T) {
+	r := setupRouter()
+
+	body := BatchDisableRequest{PostIDs: []int{1, 2, 3}}
+	jsonBody, _ := json.Marshal(body)
+	req, _ := http.NewRequest(http.MethodPost, "/api/videos/batch-disable", bytes.NewBuffer(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	// Endpoint should respond (may fail upstream, but should not return 404)
+	if w.Code == http.StatusNotFound {
+		t.Error("expected endpoint to exist, got 404")
+	}
+}
+
+func TestGetVideos_WithSearchParam(t *testing.T) {
+	r := setupRouter()
+
+	req, _ := http.NewRequest(http.MethodGet, "/api/videos?search=test", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code == http.StatusNotFound {
+		t.Error("expected endpoint to exist, got 404")
+	}
+}
+
+func TestGetVideos_EmptySearch(t *testing.T) {
+	r := setupRouter()
+
+	req, _ := http.NewRequest(http.MethodGet, "/api/videos?search=", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code == http.StatusNotFound {
+		t.Error("expected endpoint to exist, got 404")
 	}
 }
