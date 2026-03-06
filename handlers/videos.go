@@ -148,7 +148,7 @@ func GetVideoURL(c *gin.Context) {
 	}
 
 	if videoURL, ok := upstream["video_url"].(string); ok && videoURL != "" {
-		upstream["video_url"] = replaceVideoHost(videoURL)
+		upstream["video_url"] = makeProxyURL(replaceVideoHost(videoURL))
 	}
 
 	rewritten, err := json.Marshal(upstream)

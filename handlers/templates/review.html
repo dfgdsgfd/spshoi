@@ -232,7 +232,6 @@
     <div class="toast" id="toast"></div>
 
     <script>
-        const STORAGE_KEY = 'video_review_reviewed';
         const API_BASE = window.location.origin + '/api';
 
         let videos = [];
@@ -243,27 +242,47 @@
         let hlsInstance = null;
         let hlsRetryCount = 0;
         const HLS_MAX_RETRIES = 3;
+        let reviewedIds = [];
 
-        function getReviewedIds() {
+        async function fetchReviewedIds() {
             try {
-                return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+                const resp = await fetch(API_BASE + '/review/state');
+                const data = await resp.json();
+                reviewedIds = data.reviewed_ids || [];
             } catch {
-                return [];
+                reviewedIds = [];
             }
         }
 
-        function addReviewedId(id) {
-            const ids = getReviewedIds();
-            if (!ids.includes(id)) {
-                ids.push(id);
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
+        function getReviewedIds() {
+            return reviewedIds;
+        }
+
+        async function addReviewedId(id) {
+            if (reviewedIds.includes(id)) return;
+            try {
+                const resp = await fetch(API_BASE + '/review/state', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ post_id: id }),
+                });
+                const data = await resp.json();
+                reviewedIds = data.reviewed_ids || [];
+            } catch {
+                reviewedIds.push(id);
             }
             updateStats();
         }
 
-        function clearReviewed() {
+        async function clearReviewed() {
             if (confirm('确定清除所有审核记录？清除后已审核的视频将重新显示。')) {
-                localStorage.removeItem(STORAGE_KEY);
+                try {
+                    const resp = await fetch(API_BASE + '/review/state', { method: 'DELETE' });
+                    const data = await resp.json();
+                    reviewedIds = data.reviewed_ids || [];
+                } catch {
+                    reviewedIds = [];
+                }
                 updateStats();
                 showToast('审核记录已清除', 'info');
                 currentPage = 1;
@@ -482,10 +501,10 @@
             document.getElementById('btnNext').disabled = !enabled;
         }
 
-        function approveVideo() {
+        async function approveVideo() {
             if (currentIndex >= videos.length) return;
             const video = videos[currentIndex];
-            addReviewedId(video.id);
+            await addReviewedId(video.id);
             showToast('已通过: ' + video.title, 'success');
             currentIndex++;
             displayCurrentVideo();
@@ -504,10 +523,10 @@
                 });
                 const data = await resp.json();
                 if (resp.ok && data.disabled > 0) {
-                    addReviewedId(video.id);
+                    await addReviewedId(video.id);
                     showToast(`已拒绝并禁用: ${video.title}`, 'error');
                 } else {
-                    addReviewedId(video.id);
+                    await addReviewedId(video.id);
                     showToast(`拒绝操作已记录 (上游: ${data.results?.[0]?.message || 'unknown'})`, 'info');
                 }
             } catch (err) {
@@ -527,8 +546,11 @@
         }
 
         // Init
-        updateStats();
-        loadVideos();
+        (async () => {
+            await fetchReviewedIds();
+            updateStats();
+            loadVideos();
+        })();
     </script>
 </body>
 </html>

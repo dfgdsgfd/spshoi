@@ -28,3 +28,6 @@ Thumbs.db
 
 # Vendor (optional)
 # vendor/
+
+# Review state data
+review_state.json

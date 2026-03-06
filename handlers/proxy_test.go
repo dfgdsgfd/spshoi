@@ -35,6 +35,7 @@ func TestIsAllowedProxyHost(t *testing.T) {
 	}{
 		{"https://edgecdn2-tc.yuelk.com:30086/video/index.m3u8", true},
 		{"https://v.yuelk.com/pima/image.webp", true},
+		{"http://192.168.80.101:7896/video/index.m3u8", true},
 		{"https://evil.com/hack", false},
 		{"https://example.com/test", false},
 		{"not-a-url", false},
@@ -102,6 +103,65 @@ seg-0.ts`
 	}
 }
 
+func TestRewriteM3U8_WithEncryptionKey(t *testing.T) {
+	baseURL := "http://192.168.80.101:7896/wp-content/uploads/video/2026-02-04/72035dfd3e_RTmd7E/720p_c57bc6/index.m3u8"
+
+	input := `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:8
+#EXT-X-MEDIA-SEQUENCE:0
+#EXT-X-KEY:METHOD=AES-128,URI="enc.key",IV=0x20481f7985eee23400db1e486481f246
+#EXTINF:8.333333,
+segment_000.ts
+#EXTINF:8.333333,
+segment_001.ts
+#EXT-X-ENDLIST`
+
+	result := rewriteM3U8(input, baseURL)
+	lines := strings.Split(result, "\n")
+
+	// Check that enc.key URI is rewritten to proxy URL
+	foundKey := false
+	for _, line := range lines {
+		if strings.Contains(line, "EXT-X-KEY") {
+			foundKey = true
+			if !strings.Contains(line, "URI=\""+proxyVideoPath) {
+				t.Errorf("expected EXT-X-KEY URI to be proxied, got: %s", line)
+			}
+			// Verify the resolved URL contains the correct base path
+			idx := strings.Index(line, "URI=\""+proxyVideoPath)
+			if idx != -1 {
+				start := idx + 5 + len(proxyVideoPath)
+				end := strings.Index(line[start:], "\"")
+				if end != -1 {
+					encoded := line[start : start+end]
+					decoded, err := url.QueryUnescape(encoded)
+					if err != nil {
+						t.Errorf("failed to decode enc.key URL: %v", err)
+					}
+					if !strings.HasSuffix(decoded, "/enc.key") {
+						t.Errorf("expected enc.key in decoded URL, got: %s", decoded)
+					}
+				}
+			}
+		}
+	}
+	if !foundKey {
+		t.Error("expected EXT-X-KEY line in output")
+	}
+
+	// Check that segment URLs are also proxied
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if !strings.HasPrefix(trimmed, proxyVideoPath) {
+			t.Errorf("expected segment URL to be proxied, got: %s", trimmed)
+		}
+	}
+}
+
 func TestRewriteVideoURLs(t *testing.T) {
 	input := `{
 		"success": true,
@@ -126,31 +186,35 @@ func TestRewriteVideoURLs(t *testing.T) {
 	result := rewriteVideoURLs([]byte(input))
 	resultStr := string(result)
 
-	// Original CDN URLs should NOT be present in preview_video_url
-	if strings.Contains(resultStr, "edgecdn2-tc.yuelk.com:30086") {
-		t.Error("expected CDN URLs to be rewritten, but found original URL in output")
+	// Video URLs should now be proxied (wrapped in /api/proxy/video?url=...)
+	if !strings.Contains(resultStr, "/api/proxy/video?url=") {
+		t.Error("expected video proxy URLs in output")
 	}
 
-	// Video URLs should use the play base URL
-	if !strings.Contains(resultStr, getVideoPlayBaseURL()) {
-		t.Errorf("expected video URLs to use play base URL %s", getVideoPlayBaseURL())
-	}
-
-	// Image URLs should use the image proxy path
-	if !strings.Contains(resultStr, "/api/proxy/image?url=") {
-		t.Error("expected image proxy URLs in output")
-	}
-
-	// Original image host should NOT be directly present
+	// The proxied URL should contain the play base URL (not CDN)
 	var data map[string]interface{}
 	json.Unmarshal(result, &data)
 	posts := data["posts"].([]interface{})
 	for _, p := range posts {
 		pm := p.(map[string]interface{})
-		imgURL := pm["first_image"].(string)
-		if strings.HasPrefix(imgURL, "https://v.yuelk.com") {
-			t.Error("expected first_image to be rewritten to proxy URL")
+		videoURL := pm["preview_video_url"].(string)
+		if !strings.HasPrefix(videoURL, proxyVideoPath) {
+			t.Errorf("expected preview_video_url to start with proxy path, got: %s", videoURL)
 		}
+		// Decode and check the internal URL uses play base
+		encoded := strings.TrimPrefix(videoURL, proxyVideoPath)
+		decoded, err := url.QueryUnescape(encoded)
+		if err != nil {
+			t.Errorf("failed to decode proxy URL: %v", err)
+		}
+		if !strings.HasPrefix(decoded, getVideoPlayBaseURL()) {
+			t.Errorf("expected proxied URL to use play base URL, got: %s", decoded)
+		}
+	}
+
+	// Image URLs should use the image proxy path
+	if !strings.Contains(resultStr, "/api/proxy/image?url=") {
+		t.Error("expected image proxy URLs in output")
 	}
 }
 

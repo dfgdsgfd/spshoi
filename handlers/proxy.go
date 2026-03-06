@@ -28,11 +28,23 @@ var cdnHosts = []string{
 	"edgeone-cdn.yuelk.com",
 }
 
-// allowedProxyHosts restricts which hosts can be proxied to prevent SSRF
-var allowedProxyHosts = []string{
+// staticAllowedProxyHosts are upstream hosts that can always be proxied
+var staticAllowedProxyHosts = []string{
 	"edgecdn2-tc.yuelk.com",
 	"edgeone-cdn.yuelk.com",
 	"v.yuelk.com",
+}
+
+// getAllowedProxyHosts returns the list of allowed proxy hosts, including the
+// configured video play base URL host so proxied m3u8 content can be fetched.
+func getAllowedProxyHosts() []string {
+	hosts := make([]string, len(staticAllowedProxyHosts))
+	copy(hosts, staticAllowedProxyHosts)
+	playBase := getVideoPlayBaseURL()
+	if u, err := url.Parse(playBase); err == nil && u.Hostname() != "" {
+		hosts = append(hosts, u.Hostname())
+	}
+	return hosts
 }
 
 func getVideoPlayBaseURL() string {
@@ -55,7 +67,7 @@ func isAllowedProxyHost(rawURL string) bool {
 		return false
 	}
 	host := parsedURL.Hostname()
-	for _, allowed := range allowedProxyHosts {
+	for _, allowed := range getAllowedProxyHosts() {
 		if host == allowed {
 			return true
 		}
@@ -238,7 +250,7 @@ func rewriteVideoURLs(body []byte) []byte {
 			continue
 		}
 		if videoURL, ok := postMap["preview_video_url"].(string); ok && videoURL != "" {
-			postMap["preview_video_url"] = replaceVideoHost(videoURL)
+			postMap["preview_video_url"] = makeProxyURL(replaceVideoHost(videoURL))
 		}
 		if imageURL, ok := postMap["first_image"].(string); ok && imageURL != "" {
 			postMap["first_image"] = makeImageProxyURL(imageURL)

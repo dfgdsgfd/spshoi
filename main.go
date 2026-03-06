@@ -39,6 +39,9 @@ func main() {
 		api.POST("/videos/batch-disable", handlers.BatchDisableVideos)
 		api.GET("/proxy/video", handlers.ProxyVideo)
 		api.GET("/proxy/image", handlers.ProxyImage)
+		api.GET("/review/state", handlers.GetReviewState)
+		api.POST("/review/state", handlers.AddReviewedID)
+		api.DELETE("/review/state", handlers.ClearReviewState)
 	}
 
 	// Video review page - embedded HTML
