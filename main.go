@@ -40,6 +40,7 @@ func main() {
 
 	// Video review page - embedded HTML
 	r.GET("/review", handlers.ReviewPage)
+	r.GET("/review.html", handlers.ReviewPage)
 
 	// Swagger docs - no authentication required
 	r.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

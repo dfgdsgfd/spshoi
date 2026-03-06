@@ -259,7 +259,7 @@
                 const data = await resp.json();
                 if (data.posts && data.posts.length > 0) {
                     totalPages = data.total_pages || 1;
-                    totalCount = data.total || 0;
+                    totalCount = data.total_posts || data.total || 0;
                     const reviewed = getReviewedIds();
                     videos = data.posts.filter(v => !reviewed.includes(v.id));
                     currentIndex = 0;
@@ -315,7 +315,9 @@
             document.getElementById('videoId').textContent = video.id;
             document.getElementById('videoDuration').textContent = formatDuration(video.duration);
             document.getElementById('videoDate').textContent = video.created_at ? video.created_at.split('T')[0] : '-';
-            document.getElementById('loadingText').style.display = 'block';
+            const loadingText = document.getElementById('loadingText');
+            loadingText.textContent = '加载中...';
+            loadingText.style.display = 'block';
 
             setButtonsEnabled(true);
             playVideo(video.preview_video_url);
@@ -323,17 +325,26 @@
 
         function playVideo(url) {
             const videoEl = document.getElementById('videoPlayer');
+            const loadingText = document.getElementById('loadingText');
+
             if (hlsInstance) {
                 hlsInstance.destroy();
                 hlsInstance = null;
             }
+            videoEl.removeAttribute('src');
+            videoEl.load();
 
             if (!url) {
-                document.getElementById('loadingText').textContent = '无视频地址';
+                loadingText.textContent = '无视频地址';
                 return;
             }
 
-            if (url.includes('.m3u8') && Hls.isSupported()) {
+            videoEl.onerror = () => {
+                loadingText.textContent = '视频加载失败';
+                loadingText.style.display = 'block';
+            };
+
+            if (url.includes('.m3u8') && typeof Hls !== 'undefined' && Hls.isSupported()) {
                 hlsInstance = new Hls({
                     maxBufferLength: 30,
                     maxMaxBufferLength: 60,
@@ -341,25 +352,31 @@
                 hlsInstance.loadSource(url);
                 hlsInstance.attachMedia(videoEl);
                 hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
-                    document.getElementById('loadingText').style.display = 'none';
+                    loadingText.style.display = 'none';
                     videoEl.play().catch(() => {});
                 });
                 hlsInstance.on(Hls.Events.ERROR, (event, data) => {
                     if (data.fatal) {
-                        document.getElementById('loadingText').textContent = '视频加载失败';
-                        document.getElementById('loadingText').style.display = 'block';
+                        loadingText.textContent = '视频加载失败';
+                        loadingText.style.display = 'block';
+                        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                            hlsInstance.startLoad();
+                        } else {
+                            hlsInstance.destroy();
+                            hlsInstance = null;
+                        }
                     }
                 });
-            } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+            } else if (url.includes('.m3u8') && videoEl.canPlayType('application/vnd.apple.mpegurl')) {
                 videoEl.src = url;
                 videoEl.addEventListener('loadedmetadata', () => {
-                    document.getElementById('loadingText').style.display = 'none';
+                    loadingText.style.display = 'none';
                     videoEl.play().catch(() => {});
                 }, { once: true });
             } else {
                 videoEl.src = url;
                 videoEl.addEventListener('loadeddata', () => {
-                    document.getElementById('loadingText').style.display = 'none';
+                    loadingText.style.display = 'none';
                 }, { once: true });
             }
         }
