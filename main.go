@@ -38,6 +38,9 @@ func main() {
 		api.POST("/videos/batch-disable", handlers.BatchDisableVideos)
 	}
 
+	// Video review page - embedded HTML
+	r.GET("/review", handlers.ReviewPage)
+
 	// Swagger docs - no authentication required
 	r.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
@@ -47,6 +50,7 @@ func main() {
 	}
 
 	log.Printf("Server starting on :%s", port)
+	log.Printf("Video review page at http://localhost:%s/review", port)
 	log.Printf("Swagger docs available at http://localhost:%s/docs/index.html", port)
 	if err := r.Run(":" + port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)

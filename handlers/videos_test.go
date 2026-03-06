@@ -19,6 +19,7 @@ func setupRouter() *gin.Engine {
 		api.POST("/videos/batch-toggle", BatchToggleVideos)
 		api.POST("/videos/batch-disable", BatchDisableVideos)
 	}
+	r.GET("/review", ReviewPage)
 	return r
 }
 
@@ -183,5 +184,41 @@ func TestGetVideos_EmptySearch(t *testing.T) {
 
 	if w.Code == http.StatusNotFound {
 		t.Error("expected endpoint to exist, got 404")
+	}
+}
+
+func TestReviewPage(t *testing.T) {
+	r := setupRouter()
+
+	req, _ := http.NewRequest(http.MethodGet, "/review", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "text/html; charset=utf-8" {
+		t.Errorf("expected text/html content type, got %s", contentType)
+	}
+
+	body := w.Body.String()
+	if len(body) == 0 {
+		t.Error("expected non-empty body")
+	}
+
+	// Verify key HTML elements are present
+	if !bytes.Contains(w.Body.Bytes(), []byte("视频审核")) {
+		t.Error("expected review page to contain '视频审核'")
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("hls.js")) {
+		t.Error("expected review page to contain hls.js reference")
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("btnApprove")) {
+		t.Error("expected review page to contain approve button")
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("btnReject")) {
+		t.Error("expected review page to contain reject button")
 	}
 }
