@@ -416,24 +416,36 @@
             loadingText.textContent = '正在获取完整视频...';
             loadingText.style.display = 'block';
 
-            try {
-                const resp = await fetch(API_BASE + '/videos/get-url', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ post_id: video.id, quality: '720p' }),
-                });
-                const data = await resp.json();
-                if (resp.ok && data.video_url) {
-                    coverImg.style.display = 'none';
-                    playVideo(data.video_url);
-                } else {
-                    // Fallback to preview URL
-                    coverImg.style.display = 'none';
-                    playVideo(video.preview_video_url);
-                }
-            } catch (err) {
-                // Fallback to preview URL on error
+            // Use pre-fetched 720p URL from the video list if available
+            if (video.video_url) {
                 coverImg.style.display = 'none';
+                playVideo(video.video_url);
+                return;
+            }
+
+            // Fallback: try fetching 720p URL on demand with retries
+            let videoURL = null;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                try {
+                    const resp = await fetch(API_BASE + '/videos/get-url', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ post_id: video.id, quality: '720p' }),
+                    });
+                    const data = await resp.json();
+                    if (resp.ok && data.video_url) {
+                        videoURL = data.video_url;
+                        break;
+                    }
+                } catch (e) { console.warn('get-url attempt failed:', e); }
+                if (attempt < 2) await new Promise(r => setTimeout(r, 1000));
+            }
+
+            coverImg.style.display = 'none';
+            if (videoURL) {
+                playVideo(videoURL);
+            } else {
+                showToast('720p视频获取失败，使用预览质量', 'info');
                 playVideo(video.preview_video_url);
             }
         }

@@ -252,6 +252,9 @@ func rewriteVideoURLs(body []byte) []byte {
 		if videoURL, ok := postMap["preview_video_url"].(string); ok && videoURL != "" {
 			postMap["preview_video_url"] = makeProxyURL(replaceVideoHost(videoURL))
 		}
+		if videoURL, ok := postMap["video_url"].(string); ok && videoURL != "" {
+			postMap["video_url"] = makeProxyURL(replaceVideoHost(videoURL))
+		}
 		if imageURL, ok := postMap["first_image"].(string); ok && imageURL != "" {
 			postMap["first_image"] = makeImageProxyURL(imageURL)
 		}
