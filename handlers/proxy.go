@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -107,7 +108,9 @@ func ProxyVideo(c *gin.Context) {
 	if resp.ContentLength >= 0 {
 		c.Header("Content-Length", fmt.Sprintf("%d", resp.ContentLength))
 	}
-	io.Copy(c.Writer, resp.Body)
+	if _, err := io.Copy(c.Writer, resp.Body); err != nil {
+		log.Printf("proxy: error streaming response from %s: %v", parsedURL.Host, err)
+	}
 }
 
 // rewriteM3U8 rewrites URLs in an m3u8 playlist to go through our proxy
