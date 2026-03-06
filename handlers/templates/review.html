@@ -383,17 +383,12 @@
             document.getElementById('videoDuration').textContent = formatDuration(video.duration);
             document.getElementById('videoDate').textContent = video.created_at ? video.created_at.split('T')[0] : '-';
             const loadingText = document.getElementById('loadingText');
-            loadingText.textContent = '点击封面播放完整视频';
+            loadingText.textContent = '正在获取完整视频...';
             loadingText.style.display = 'block';
 
-            // Show cover image
+            // Hide cover image - we auto-play full video now
             const coverImg = document.getElementById('videoCover');
-            if (video.first_image) {
-                coverImg.src = video.first_image;
-                coverImg.style.display = 'block';
-            } else {
-                coverImg.style.display = 'none';
-            }
+            coverImg.style.display = 'none';
 
             // Stop any current playback
             const videoEl = document.getElementById('videoPlayer');
@@ -405,6 +400,9 @@
             videoEl.load();
 
             setButtonsEnabled(true);
+
+            // Automatically fetch and play full 720p video
+            startPlayback();
         }
 
         async function startPlayback() {
