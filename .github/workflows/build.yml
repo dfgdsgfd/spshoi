@@ -1,0 +1,52 @@
+name: Build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build:
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            ext: ""
+          - os: windows-latest
+            goos: windows
+            ext: ".exe"
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Install swag
+        run: go install github.com/swaggo/swag/cmd/swag@v1.16.4
+
+      - name: Generate Swagger docs
+        run: swag init --parseDependency
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: amd64
+        run: go build -o video-center${{ matrix.ext }} .
+
+      - name: Test
+        run: go test ./... -v
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-center-${{ matrix.goos }}-amd64
+          path: video-center${{ matrix.ext }}

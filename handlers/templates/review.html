@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>视频审核</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.7"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .header {
+            width: 100%;
+            padding: 16px 24px;
+            background: #16213e;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #0f3460;
+        }
+        .header h1 { font-size: 20px; color: #e94560; }
+        .header .stats { font-size: 14px; color: #999; }
+        .container {
+            flex: 1;
+            width: 100%;
+            max-width: 1200px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .video-info {
+            width: 100%;
+            text-align: center;
+            margin-bottom: 12px;
+        }
+        .video-info h2 {
+            font-size: 18px;
+            color: #fff;
+            margin-bottom: 4px;
+            word-break: break-all;
+        }
+        .video-info .meta {
+            font-size: 13px;
+            color: #888;
+        }
+        .player-wrapper {
+            width: 100%;
+            max-width: 960px;
+            aspect-ratio: 16 / 9;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+        }
+        .player-wrapper video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        .player-wrapper .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #888;
+            font-size: 16px;
+        }
+        .controls {
+            width: 100%;
+            max-width: 960px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 20px;
+            gap: 16px;
+        }
+        .btn {
+            padding: 14px 40px;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            min-width: 160px;
+        }
+        .btn:hover { transform: scale(1.05); }
+        .btn:active { transform: scale(0.98); }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .btn-approve {
+            background: #27ae60;
+            color: #fff;
+        }
+        .btn-approve:hover:not(:disabled) { background: #2ecc71; }
+        .btn-reject {
+            background: #e74c3c;
+            color: #fff;
+        }
+        .btn-reject:hover:not(:disabled) { background: #c0392b; }
+        .btn-next {
+            background: #3498db;
+            color: #fff;
+        }
+        .btn-next:hover:not(:disabled) { background: #2980b9; }
+        .btn-clear {
+            background: #7f8c8d;
+            color: #fff;
+            padding: 8px 16px;
+            font-size: 13px;
+            min-width: auto;
+        }
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 24px;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 14px;
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .toast.show { opacity: 1; }
+        .toast.success { background: #27ae60; }
+        .toast.error { background: #e74c3c; }
+        .toast.info { background: #3498db; }
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 400px;
+            color: #888;
+        }
+        .empty-state h2 { font-size: 24px; margin-bottom: 12px; color: #ccc; }
+        .empty-state p { font-size: 16px; }
+
+        /* Mobile responsive */
+        @media (max-width: 600px) {
+            .header {
+                flex-direction: column;
+                gap: 8px;
+                padding: 12px 16px;
+                text-align: center;
+            }
+            .header h1 { font-size: 18px; }
+            .header .stats { font-size: 12px; }
+            .container { padding: 12px; }
+            .video-info h2 { font-size: 15px; }
+            .video-info .meta { font-size: 12px; }
+            .controls {
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 10px;
+                margin-top: 14px;
+            }
+            .btn {
+                padding: 12px 0;
+                font-size: 15px;
+                min-width: 0;
+                flex: 1 1 30%;
+            }
+            .btn-clear {
+                padding: 6px 12px;
+                font-size: 12px;
+            }
+            .toast {
+                left: 12px;
+                right: 12px;
+                text-align: center;
+            }
+            .empty-state { min-height: 250px; }
+            .empty-state h2 { font-size: 20px; }
+            .empty-state p { font-size: 14px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📹 视频审核</h1>
+        <div class="stats">
+            已审核: <span id="reviewedCount">0</span> 个 |
+            当前页: <span id="currentPage">-</span> |
+            总数: <span id="totalCount">-</span>
+            <button class="btn btn-clear" onclick="clearReviewed()">清除审核记录</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div id="videoSection">
+            <div class="video-info">
+                <h2 id="videoTitle">加载中...</h2>
+                <div class="meta">
+                    ID: <span id="videoId">-</span> |
+                    时长: <span id="videoDuration">-</span> |
+                    创建: <span id="videoDate">-</span>
+                </div>
+            </div>
+
+            <div class="player-wrapper">
+                <img id="videoCover" style="width:100%;height:100%;object-fit:contain;position:absolute;top:0;left:0;z-index:1;cursor:pointer;" onclick="startPlayback()" />
+                <video id="videoPlayer" controls playsinline></video>
+                <div class="loading" id="loadingText">加载中...</div>
+            </div>
+
+            <div class="controls">
+                <button class="btn btn-approve" id="btnApprove" onclick="approveVideo()">✅ 通过</button>
+                <button class="btn btn-next" id="btnNext" onclick="nextVideo()">⏭ 下一个</button>
+                <button class="btn btn-reject" id="btnReject" onclick="rejectVideo()">❌ 拒绝</button>
+            </div>
+        </div>
+
+        <div id="emptyState" class="empty-state" style="display:none">
+            <h2>🎉 全部审核完毕</h2>
+            <p>当前页面的所有视频已审核完毕，正在加载下一页...</p>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        const API_BASE = window.location.origin + '/api';
+
+        let videos = [];
+        let currentIndex = 0;
+        let currentPage = 1;
+        let totalPages = 1;
+        let totalCount = 0;
+        let hlsInstance = null;
+        let hlsRetryCount = 0;
+        const HLS_MAX_RETRIES = 3;
+        let reviewedIds = [];
+
+        async function fetchReviewedIds() {
+            try {
+                const resp = await fetch(API_BASE + '/review/state');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    reviewedIds = data.reviewed_ids || [];
+                } else {
+                    reviewedIds = [];
+                }
+            } catch {
+                reviewedIds = [];
+            }
+        }
+
+        function getReviewedIds() {
+            return reviewedIds;
+        }
+
+        async function addReviewedId(id) {
+            if (reviewedIds.includes(id)) return;
+            try {
+                const resp = await fetch(API_BASE + '/review/state', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ post_id: id }),
+                });
+                const data = await resp.json();
+                reviewedIds = data.reviewed_ids || [];
+            } catch {
+                if (!reviewedIds.includes(id)) {
+                    reviewedIds.push(id);
+                }
+            }
+            updateStats();
+        }
+
+        async function clearReviewed() {
+            if (confirm('确定清除所有审核记录？清除后已审核的视频将重新显示。')) {
+                try {
+                    const resp = await fetch(API_BASE + '/review/state', { method: 'DELETE' });
+                    const data = await resp.json();
+                    reviewedIds = data.reviewed_ids || [];
+                } catch {
+                    reviewedIds = [];
+                }
+                updateStats();
+                showToast('审核记录已清除', 'info');
+                currentPage = 1;
+                loadVideos();
+            }
+        }
+
+        function updateStats() {
+            document.getElementById('reviewedCount').textContent = getReviewedIds().length;
+            document.getElementById('currentPage').textContent = currentPage + '/' + totalPages;
+            document.getElementById('totalCount').textContent = totalCount;
+        }
+
+        function showToast(msg, type) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'toast show ' + type;
+            setTimeout(() => { t.className = 'toast'; }, 3000);
+        }
+
+        function formatDuration(seconds) {
+            if (!seconds) return '-';
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return m + '分' + s + '秒';
+        }
+
+        async function loadVideos() {
+            try {
+                const url = new URL(API_BASE + '/videos', window.location.origin);
+                url.searchParams.set('page', currentPage);
+                url.searchParams.set('per_page', '20');
+                url.searchParams.set('order', 'DESC');
+                const resp = await fetch(url);
+                const data = await resp.json();
+                if (data.posts && data.posts.length > 0) {
+                    totalPages = data.total_pages || 1;
+                    totalCount = data.total_posts || data.total || 0;
+                    const reviewed = getReviewedIds();
+                    videos = data.posts.filter(v => !reviewed.includes(v.id));
+                    currentIndex = 0;
+                    updateStats();
+
+                    if (videos.length === 0) {
+                        if (currentPage < totalPages) {
+                            currentPage++;
+                            loadVideos();
+                            return;
+                        }
+                        showEmptyState();
+                        return;
+                    }
+                    showVideoSection();
+                    displayCurrentVideo();
+                } else {
+                    if (currentPage < totalPages) {
+                        currentPage++;
+                        loadVideos();
+                        return;
+                    }
+                    showEmptyState();
+                }
+            } catch (err) {
+                showToast('加载视频失败: ' + err.message, 'error');
+            }
+        }
+
+        function showEmptyState() {
+            document.getElementById('videoSection').style.display = 'none';
+            document.getElementById('emptyState').style.display = 'flex';
+        }
+
+        function showVideoSection() {
+            document.getElementById('videoSection').style.display = 'block';
+            document.getElementById('emptyState').style.display = 'none';
+        }
+
+        function displayCurrentVideo() {
+            if (currentIndex >= videos.length) {
+                if (currentPage < totalPages) {
+                    currentPage++;
+                    loadVideos();
+                } else {
+                    showEmptyState();
+                }
+                return;
+            }
+
+            const video = videos[currentIndex];
+            document.getElementById('videoTitle').textContent = video.title || '无标题';
+            document.getElementById('videoId').textContent = video.id;
+            document.getElementById('videoDuration').textContent = formatDuration(video.duration);
+            document.getElementById('videoDate').textContent = video.created_at ? video.created_at.split('T')[0] : '-';
+            const loadingText = document.getElementById('loadingText');
+            loadingText.textContent = '点击封面播放完整视频';
+            loadingText.style.display = 'block';
+
+            // Show cover image
+            const coverImg = document.getElementById('videoCover');
+            if (video.first_image) {
+                coverImg.src = video.first_image;
+                coverImg.style.display = 'block';
+            } else {
+                coverImg.style.display = 'none';
+            }
+
+            // Stop any current playback
+            const videoEl = document.getElementById('videoPlayer');
+            if (hlsInstance) {
+                hlsInstance.destroy();
+                hlsInstance = null;
+            }
+            videoEl.removeAttribute('src');
+            videoEl.load();
+
+            setButtonsEnabled(true);
+        }
+
+        async function startPlayback() {
+            if (currentIndex >= videos.length) return;
+            const video = videos[currentIndex];
+            const loadingText = document.getElementById('loadingText');
+            const coverImg = document.getElementById('videoCover');
+
+            loadingText.textContent = '正在获取完整视频...';
+            loadingText.style.display = 'block';
+
+            try {
+                const resp = await fetch(API_BASE + '/videos/get-url', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ post_id: video.id, quality: '720p' }),
+                });
+                const data = await resp.json();
+                if (resp.ok && data.video_url) {
+                    coverImg.style.display = 'none';
+                    playVideo(data.video_url);
+                } else {
+                    // Fallback to preview URL
+                    coverImg.style.display = 'none';
+                    playVideo(video.preview_video_url);
+                }
+            } catch (err) {
+                // Fallback to preview URL on error
+                coverImg.style.display = 'none';
+                playVideo(video.preview_video_url);
+            }
+        }
+
+        function playVideo(url) {
+            const videoEl = document.getElementById('videoPlayer');
+            const loadingText = document.getElementById('loadingText');
+
+            if (hlsInstance) {
+                hlsInstance.destroy();
+                hlsInstance = null;
+            }
+
+            if (!url) {
+                videoEl.removeAttribute('src');
+                videoEl.load();
+                loadingText.textContent = '无视频地址';
+                return;
+            }
+
+            videoEl.removeAttribute('src');
+            videoEl.load();
+            hlsRetryCount = 0;
+
+            videoEl.onerror = () => {
+                loadingText.textContent = '视频加载失败';
+                loadingText.style.display = 'block';
+            };
+
+            if (url.includes('.m3u8') && typeof Hls !== 'undefined' && Hls.isSupported()) {
+                hlsInstance = new Hls({
+                    maxBufferLength: 30,
+                    maxMaxBufferLength: 60,
+                });
+                hlsInstance.loadSource(url);
+                hlsInstance.attachMedia(videoEl);
+                hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+                    loadingText.style.display = 'none';
+                    videoEl.play().catch(() => {});
+                });
+                hlsInstance.on(Hls.Events.ERROR, (event, data) => {
+                    if (data.fatal) {
+                        loadingText.textContent = '视频加载失败';
+                        loadingText.style.display = 'block';
+                        if (data.type === Hls.ErrorTypes.NETWORK_ERROR && hlsRetryCount < HLS_MAX_RETRIES) {
+                            hlsRetryCount++;
+                            hlsInstance.startLoad();
+                        } else {
+                            hlsInstance.destroy();
+                            hlsInstance = null;
+                        }
+                    }
+                });
+            } else if (url.includes('.m3u8') && videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+                videoEl.src = url;
+                videoEl.addEventListener('loadedmetadata', () => {
+                    loadingText.style.display = 'none';
+                    videoEl.play().catch(() => {});
+                }, { once: true });
+            } else {
+                videoEl.src = url;
+                videoEl.addEventListener('loadeddata', () => {
+                    loadingText.style.display = 'none';
+                }, { once: true });
+            }
+        }
+
+        function setButtonsEnabled(enabled) {
+            document.getElementById('btnApprove').disabled = !enabled;
+            document.getElementById('btnReject').disabled = !enabled;
+            document.getElementById('btnNext').disabled = !enabled;
+        }
+
+        async function approveVideo() {
+            if (currentIndex >= videos.length) return;
+            const video = videos[currentIndex];
+            await addReviewedId(video.id);
+            showToast('已通过: ' + video.title, 'success');
+            currentIndex++;
+            displayCurrentVideo();
+        }
+
+        async function rejectVideo() {
+            if (currentIndex >= videos.length) return;
+            const video = videos[currentIndex];
+            setButtonsEnabled(false);
+
+            try {
+                const resp = await fetch(API_BASE + '/videos/batch-disable', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ post_ids: [video.id] }),
+                });
+                const data = await resp.json();
+                if (resp.ok && data.disabled > 0) {
+                    await addReviewedId(video.id);
+                    showToast(`已拒绝并禁用: ${video.title}`, 'error');
+                } else {
+                    await addReviewedId(video.id);
+                    showToast(`拒绝操作已记录 (上游: ${data.results?.[0]?.message || 'unknown'})`, 'info');
+                }
+            } catch (err) {
+                showToast(`禁用请求失败: ${err.message}`, 'error');
+                setButtonsEnabled(true);
+                return;
+            }
+
+            currentIndex++;
+            displayCurrentVideo();
+        }
+
+        function nextVideo() {
+            if (currentIndex >= videos.length) return;
+            currentIndex++;
+            displayCurrentVideo();
+        }
+
+        // Init
+        (async () => {
+            await fetchReviewedIds();
+            updateStats();
+            loadVideos();
+        })();
+    </script>
+</body>
+</html>

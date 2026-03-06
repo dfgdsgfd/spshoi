@@ -1,0 +1,223 @@
+basePath: /api
+definitions:
+  handlers.BatchDisableRequest:
+    properties:
+      post_ids:
+        example:
+        - 1
+        - 2
+        - 3
+        items:
+          type: integer
+        minItems: 1
+        type: array
+    required:
+    - post_ids
+    type: object
+  handlers.BatchDisableResponse:
+    properties:
+      disabled:
+        type: integer
+      failed:
+        type: integer
+      results:
+        items:
+          $ref: '#/definitions/handlers.DisableResult'
+        type: array
+      total:
+        type: integer
+    type: object
+  handlers.BatchToggleRequest:
+    properties:
+      videos:
+        items:
+          $ref: '#/definitions/handlers.VideoToggleRequest'
+        minItems: 1
+        type: array
+    required:
+    - videos
+    type: object
+  handlers.BatchToggleResponse:
+    properties:
+      failed:
+        type: integer
+      results:
+        items:
+          $ref: '#/definitions/handlers.ToggleResult'
+        type: array
+      success:
+        type: integer
+      total:
+        type: integer
+    type: object
+  handlers.DisableResult:
+    properties:
+      message:
+        type: string
+      post_id:
+        type: integer
+      success:
+        type: boolean
+    type: object
+  handlers.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  handlers.ToggleResult:
+    properties:
+      enable:
+        type: boolean
+      message:
+        type: string
+      post_id:
+        type: integer
+      success:
+        type: boolean
+    type: object
+  handlers.VideoListResponse:
+    properties:
+      page:
+        type: integer
+      posts:
+        items: {}
+        type: array
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  handlers.VideoToggleRequest:
+    properties:
+      enable:
+        example: false
+        type: boolean
+      post_id:
+        example: 1
+        type: integer
+    required:
+    - post_id
+    type: object
+info:
+  contact: {}
+  description: A Go-Gin based API for video center management. Provides endpoints
+    to list videos and batch toggle video enable/disable status.
+  title: Video Center API
+  version: "1.0"
+paths:
+  /videos:
+    get:
+      consumes:
+      - application/json
+      description: Fetch video list from the upstream API with pagination, search,
+        and sorting options
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - default: 20
+        description: Items per page
+        in: query
+        maximum: 100
+        minimum: 1
+        name: per_page
+        type: integer
+      - description: Search keyword
+        in: query
+        name: search
+        type: string
+      - default: DESC
+        description: Sort order
+        enum:
+        - ASC
+        - DESC
+        in: query
+        name: order
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.VideoListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Get video center list
+      tags:
+      - videos
+  /videos/batch-disable:
+    post:
+      consumes:
+      - application/json
+      description: Batch disable multiple videos by calling the upstream video-enable-toggle
+        API with enable=false for each post ID
+      parameters:
+      - description: List of post IDs to disable
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.BatchDisableRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.BatchDisableResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Batch disable videos
+      tags:
+      - videos
+  /videos/batch-toggle:
+    post:
+      consumes:
+      - application/json
+      description: Toggle enable/disable status for multiple videos at once via the
+        upstream admin API
+      parameters:
+      - description: List of videos to toggle
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.BatchToggleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.BatchToggleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Batch toggle video enable/disable
+      tags:
+      - videos
+schemes:
+- http
+- https
+swagger: "2.0"
