@@ -244,6 +244,38 @@
         const HLS_MAX_RETRIES = 3;
         let reviewedIds = [];
 
+        // --- Page cache: persist fetched page data in localStorage ---
+        const PAGE_CACHE_KEY = 'video_page_cache';
+        const CACHE_EXPIRY_MS = 30 * 60 * 1000; // 30 minutes
+
+        function getPageCache() {
+            try {
+                return JSON.parse(localStorage.getItem(PAGE_CACHE_KEY)) || {};
+            } catch { return {}; }
+        }
+
+        function cachePageData(page, data) {
+            const cache = getPageCache();
+            cache[String(page)] = { data: data, ts: Date.now() };
+            try {
+                localStorage.setItem(PAGE_CACHE_KEY, JSON.stringify(cache));
+            } catch (e) {
+                console.warn('localStorage cache write failed:', e);
+            }
+        }
+
+        function getCachedPage(page) {
+            const cache = getPageCache();
+            const entry = cache[String(page)];
+            if (!entry) return null;
+            if (Date.now() - entry.ts > CACHE_EXPIRY_MS) return null;
+            return entry.data;
+        }
+
+        function clearPageCache() {
+            localStorage.removeItem(PAGE_CACHE_KEY);
+        }
+
         async function fetchReviewedIds() {
             try {
                 const resp = await fetch(API_BASE + '/review/state');
@@ -289,6 +321,7 @@
                 } catch {
                     reviewedIds = [];
                 }
+                clearPageCache();
                 updateStats();
                 showToast('审核记录已清除', 'info');
                 currentPage = 1;
@@ -318,12 +351,20 @@
 
         async function loadVideos() {
             try {
-                const url = new URL(API_BASE + '/videos', window.location.origin);
-                url.searchParams.set('page', currentPage);
-                url.searchParams.set('per_page', '20');
-                url.searchParams.set('order', 'DESC');
-                const resp = await fetch(url);
-                const data = await resp.json();
+                // Check localStorage cache first (pages 2+ benefit most)
+                let data = getCachedPage(currentPage);
+                if (!data) {
+                    const url = new URL(API_BASE + '/videos', window.location.origin);
+                    url.searchParams.set('page', currentPage);
+                    url.searchParams.set('per_page', '20');
+                    url.searchParams.set('order', 'DESC');
+                    const resp = await fetch(url);
+                    data = await resp.json();
+                    // Cache the page response for future use
+                    if (data.posts && data.posts.length > 0) {
+                        cachePageData(currentPage, data);
+                    }
+                }
                 if (data.posts && data.posts.length > 0) {
                     totalPages = data.total_pages || 1;
                     totalCount = data.total_posts || data.total || 0;
