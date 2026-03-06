@@ -31,3 +31,6 @@ Thumbs.db
 
 # Review state data
 review_state.json
+
+# Page cache data
+page_cache.json

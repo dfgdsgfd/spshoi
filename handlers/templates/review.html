@@ -243,37 +243,47 @@
         let hlsRetryCount = 0;
         const HLS_MAX_RETRIES = 3;
         let reviewedIds = [];
+        let pageCache = {}; // in-memory mirror of server-side page_cache.json
 
-        // --- Page cache: persist fetched page data in localStorage ---
-        const PAGE_CACHE_KEY = 'video_page_cache';
-        const CACHE_EXPIRY_MS = 30 * 60 * 1000; // 30 minutes
-
-        function getPageCache() {
+        // --- Server-side page cache (JSON file) ---
+        async function loadPageCacheFromServer() {
             try {
-                return JSON.parse(localStorage.getItem(PAGE_CACHE_KEY)) || {};
-            } catch { return {}; }
+                const resp = await fetch(API_BASE + '/review/pages');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    pageCache = data.pages || {};
+                } else {
+                    pageCache = {};
+                }
+            } catch {
+                pageCache = {};
+            }
         }
 
-        function cachePageData(page, data) {
-            const cache = getPageCache();
-            cache[String(page)] = { data: data, ts: Date.now() };
+        async function savePageToServer(page, data) {
+            pageCache[String(page)] = data;
             try {
-                localStorage.setItem(PAGE_CACHE_KEY, JSON.stringify(cache));
+                await fetch(API_BASE + '/review/pages', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ page: String(page), data: data }),
+                });
             } catch (e) {
-                console.warn('localStorage cache write failed:', e);
+                console.warn('Failed to save page cache:', e);
             }
         }
 
         function getCachedPage(page) {
-            const cache = getPageCache();
-            const entry = cache[String(page)];
-            if (!entry) return null;
-            if (Date.now() - entry.ts > CACHE_EXPIRY_MS) return null;
-            return entry.data;
+            return pageCache[String(page)] || null;
         }
 
-        function clearPageCache() {
-            localStorage.removeItem(PAGE_CACHE_KEY);
+        async function clearServerPageCache() {
+            pageCache = {};
+            try {
+                await fetch(API_BASE + '/review/pages', { method: 'DELETE' });
+            } catch (e) {
+                console.warn('Failed to clear page cache:', e);
+            }
         }
 
         async function fetchReviewedIds() {
@@ -321,7 +331,7 @@
                 } catch {
                     reviewedIds = [];
                 }
-                clearPageCache();
+                await clearServerPageCache();
                 updateStats();
                 showToast('审核记录已清除', 'info');
                 currentPage = 1;
@@ -351,7 +361,7 @@
 
         async function loadVideos() {
             try {
-                // Check localStorage cache first (pages 2+ benefit most)
+                // Check server-side JSON cache first (avoids re-fetching already loaded pages)
                 let data = getCachedPage(currentPage);
                 if (!data) {
                     const url = new URL(API_BASE + '/videos', window.location.origin);
@@ -360,9 +370,9 @@
                     url.searchParams.set('order', 'DESC');
                     const resp = await fetch(url);
                     data = await resp.json();
-                    // Cache the page response for future use
+                    // Save to server-side JSON for persistence across refreshes
                     if (data.posts && data.posts.length > 0) {
-                        cachePageData(currentPage, data);
+                        await savePageToServer(currentPage, data);
                     }
                 }
                 if (data.posts && data.posts.length > 0) {
@@ -604,8 +614,9 @@
             displayCurrentVideo();
         }
 
-        // Init
+        // Init: load page cache from server JSON, then load reviewed IDs, then start from page 1
         (async () => {
+            await loadPageCacheFromServer();
             await fetchReviewedIds();
             updateStats();
             loadVideos();

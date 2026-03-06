@@ -42,6 +42,9 @@ func main() {
 		api.GET("/review/state", handlers.GetReviewState)
 		api.POST("/review/state", handlers.AddReviewedID)
 		api.DELETE("/review/state", handlers.ClearReviewState)
+		api.GET("/review/pages", handlers.GetPageCache)
+		api.POST("/review/pages", handlers.SavePageCache)
+		api.DELETE("/review/pages", handlers.ClearPageCache)
 	}
 
 	// Video review page - embedded HTML
