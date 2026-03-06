@@ -235,6 +235,7 @@ func enrichWithVideoURLs(ctx context.Context, body []byte) []byte {
 		}
 
 		wg.Add(1)
+		// Each goroutine receives its own unique postMap; no shared map writes.
 		go func(pm map[string]interface{}, id int) {
 			defer wg.Done()
 			videoURL := fetchVideoURL(enrichCtx, id, "720p")

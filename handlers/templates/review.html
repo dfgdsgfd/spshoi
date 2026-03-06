@@ -437,7 +437,7 @@
                         videoURL = data.video_url;
                         break;
                     }
-                } catch {}
+                } catch (e) { console.warn('get-url attempt failed:', e); }
                 if (attempt < 2) await new Promise(r => setTimeout(r, 1000));
             }
 

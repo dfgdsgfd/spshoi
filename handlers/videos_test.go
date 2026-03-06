@@ -310,7 +310,9 @@ func TestEnrichWithVideoURLs_UpstreamFailure(t *testing.T) {
 	result := enrichWithVideoURLs(context.Background(), []byte(input))
 
 	var data map[string]interface{}
-	json.Unmarshal(result, &data)
+	if err := json.Unmarshal(result, &data); err != nil {
+		t.Fatalf("failed to parse enriched result: %v", err)
+	}
 	posts := data["posts"].([]interface{})
 	pm := posts[0].(map[string]interface{})
 
