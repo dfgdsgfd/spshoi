@@ -372,14 +372,16 @@
                 hlsInstance.destroy();
                 hlsInstance = null;
             }
-            videoEl.removeAttribute('src');
-            videoEl.load();
 
             if (!url) {
+                videoEl.removeAttribute('src');
+                videoEl.load();
                 loadingText.textContent = '无视频地址';
                 return;
             }
 
+            videoEl.removeAttribute('src');
+            videoEl.load();
             hlsRetryCount = 0;
 
             videoEl.onerror = () => {
