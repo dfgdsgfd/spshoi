@@ -68,7 +68,9 @@ func TestPageCache_SaveAndGet(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	var state PageCacheState
-	json.Unmarshal(w.Body.Bytes(), &state)
+	if err := json.Unmarshal(w.Body.Bytes(), &state); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
 	if len(state.Pages) != 2 {
 		t.Errorf("expected 2 pages, got %d", len(state.Pages))
 	}
@@ -85,7 +87,9 @@ func TestPageCache_SaveAndGet(t *testing.T) {
 		t.Fatalf("failed to read cache file: %v", err)
 	}
 	var fileState PageCacheState
-	json.Unmarshal(data, &fileState)
+	if err := json.Unmarshal(data, &fileState); err != nil {
+		t.Fatalf("failed to parse cache file: %v", err)
+	}
 	if len(fileState.Pages) != 2 {
 		t.Errorf("expected 2 pages in file, got %d", len(fileState.Pages))
 	}
@@ -115,7 +119,9 @@ func TestPageCache_Clear(t *testing.T) {
 	}
 
 	var state PageCacheState
-	json.Unmarshal(w.Body.Bytes(), &state)
+	if err := json.Unmarshal(w.Body.Bytes(), &state); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
 	if len(state.Pages) != 0 {
 		t.Errorf("expected empty after clear, got %v", state.Pages)
 	}
@@ -165,13 +171,17 @@ func TestPageCache_OverwritePage(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	var state PageCacheState
-	json.Unmarshal(w.Body.Bytes(), &state)
+	if err := json.Unmarshal(w.Body.Bytes(), &state); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
 	if len(state.Pages) != 1 {
 		t.Errorf("expected 1 page, got %d", len(state.Pages))
 	}
 
 	var pageData map[string]interface{}
-	json.Unmarshal(state.Pages["1"], &pageData)
+	if err := json.Unmarshal(state.Pages["1"], &pageData); err != nil {
+		t.Fatalf("failed to parse page data: %v", err)
+	}
 	posts := pageData["posts"].([]interface{})
 	post := posts[0].(map[string]interface{})
 	if int(post["id"].(float64)) != 999 {
