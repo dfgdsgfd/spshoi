@@ -114,12 +114,43 @@
             color: #fff;
         }
         .btn-next:hover:not(:disabled) { background: #2980b9; }
+        .btn-prev {
+            background: #9b59b6;
+            color: #fff;
+        }
+        .btn-prev:hover:not(:disabled) { background: #8e44ad; }
+        .btn-search {
+            background: #e94560;
+            color: #fff;
+            padding: 8px 16px;
+            font-size: 13px;
+            min-width: auto;
+        }
+        .btn-search:hover:not(:disabled) { background: #c0392b; }
         .btn-clear {
             background: #7f8c8d;
             color: #fff;
             padding: 8px 16px;
             font-size: 13px;
             min-width: auto;
+        }
+        .search-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .search-bar input {
+            padding: 8px 12px;
+            border: 1px solid #0f3460;
+            border-radius: 6px;
+            background: #1a1a2e;
+            color: #eee;
+            font-size: 14px;
+            width: 220px;
+            outline: none;
+        }
+        .search-bar input:focus {
+            border-color: #e94560;
         }
         .toast {
             position: fixed;
@@ -158,6 +189,8 @@
             }
             .header h1 { font-size: 18px; }
             .header .stats { font-size: 12px; }
+            .search-bar { width: 100%; }
+            .search-bar input { flex: 1; width: auto; }
             .container { padding: 12px; }
             .video-info h2 { font-size: 15px; }
             .video-info .meta { font-size: 12px; }
@@ -191,6 +224,11 @@
 <body>
     <div class="header">
         <h1>📹 视频审核</h1>
+        <div class="search-bar">
+            <input type="text" id="searchInput" placeholder="搜索视频标题..." aria-label="搜索视频标题" />
+            <button class="btn btn-search" onclick="doSearch()" aria-label="搜索视频">🔍 搜索</button>
+            <button class="btn btn-clear" onclick="clearSearch()" id="btnClearSearch" style="display:none" aria-label="清除搜索">✕ 清除</button>
+        </div>
         <div class="stats">
             已审核: <span id="reviewedCount">0</span> 个 |
             当前页: <span id="currentPage">-</span> |
@@ -217,6 +255,7 @@
             </div>
 
             <div class="controls">
+                <button class="btn btn-prev" id="btnPrev" onclick="prevVideo()" disabled aria-label="上一个视频">⏮ 上一个</button>
                 <button class="btn btn-approve" id="btnApprove" onclick="approveVideo()">✅ 通过</button>
                 <button class="btn btn-next" id="btnNext" onclick="nextVideo()">⏭ 下一个</button>
                 <button class="btn btn-reject" id="btnReject" onclick="rejectVideo()">❌ 拒绝</button>
@@ -243,6 +282,7 @@
         let hlsRetryCount = 0;
         const HLS_MAX_RETRIES = 3;
         let reviewedIds = [];
+        let searchKeyword = '';
 
         // --- Server-side page number persistence ---
         async function loadPageNumberFromServer() {
@@ -356,6 +396,9 @@
                 url.searchParams.set('page', currentPage);
                 url.searchParams.set('per_page', '20');
                 url.searchParams.set('order', 'DESC');
+                if (searchKeyword) {
+                    url.searchParams.set('search', searchKeyword);
+                }
                 const resp = await fetch(url);
                 const data = await resp.json();
                 // Save current page number to server for persistence across refreshes
@@ -553,6 +596,11 @@
             document.getElementById('btnApprove').disabled = !enabled;
             document.getElementById('btnReject').disabled = !enabled;
             document.getElementById('btnNext').disabled = !enabled;
+            updatePrevButton();
+        }
+
+        function updatePrevButton() {
+            document.getElementById('btnPrev').disabled = currentIndex <= 0;
         }
 
         async function approveVideo() {
@@ -599,12 +647,40 @@
             displayCurrentVideo();
         }
 
-        // Init: load remembered page number from server, then load reviewed IDs, then start
+        function prevVideo() {
+            if (currentIndex <= 0) return;
+            currentIndex--;
+            displayCurrentVideo();
+        }
+
+        function doSearch() {
+            const input = document.getElementById('searchInput').value.trim();
+            searchKeyword = input;
+            currentPage = 1;
+            currentIndex = 0;
+            document.getElementById('btnClearSearch').style.display = searchKeyword ? 'inline-block' : 'none';
+            loadVideos();
+        }
+
+        function clearSearch() {
+            document.getElementById('searchInput').value = '';
+            searchKeyword = '';
+            currentPage = 1;
+            currentIndex = 0;
+            document.getElementById('btnClearSearch').style.display = 'none';
+            loadVideos();
+        }
+
+        // Init: always start from page 1 to prioritize newest videos, load reviewed IDs, then start
         (async () => {
-            await loadPageNumberFromServer();
+            currentPage = 1;
             await fetchReviewedIds();
             updateStats();
             loadVideos();
+            // Allow Enter key to trigger search
+            document.getElementById('searchInput').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') doSearch();
+            });
         })();
     </script>
 </body>
