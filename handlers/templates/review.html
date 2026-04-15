@@ -142,6 +142,63 @@
             align-items: center;
             gap: 8px;
         }
+        .page-tools {
+            width: 100%;
+            padding: 12px 24px;
+            background: #13203a;
+            border-bottom: 1px solid #0f3460;
+            display: flex;
+            justify-content: center;
+        }
+        .page-tools-inner {
+            width: 100%;
+            max-width: 1360px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .page-tool-group {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            color: #bbb;
+            font-size: 14px;
+        }
+        .page-tool-group label {
+            color: #bbb;
+        }
+        .page-tool-input {
+            width: 96px;
+            padding: 8px 12px;
+            border: 1px solid #0f3460;
+            border-radius: 6px;
+            background: #1a1a2e;
+            color: #eee;
+            font-size: 14px;
+            outline: none;
+        }
+        .page-tool-input:focus {
+            border-color: #3498db;
+        }
+        .btn-page {
+            background: #3498db;
+            color: #fff;
+            padding: 8px 16px;
+            font-size: 13px;
+            min-width: auto;
+        }
+        .btn-page:hover:not(:disabled) { background: #2980b9; }
+        .btn-mark {
+            background: #8e44ad;
+            color: #fff;
+            padding: 8px 16px;
+            font-size: 13px;
+            min-width: auto;
+        }
+        .btn-mark:hover:not(:disabled) { background: #7d3c98; }
         .search-bar input {
             padding: 8px 12px;
             border: 1px solid #0f3460;
@@ -285,6 +342,20 @@
             .header .stats { font-size: 12px; }
             .search-bar { width: 100%; }
             .search-bar input { flex: 1; width: auto; }
+            .page-tools {
+                padding: 12px 16px;
+            }
+            .page-tools-inner {
+                gap: 10px;
+                justify-content: center;
+            }
+            .page-tool-group {
+                width: 100%;
+                justify-content: center;
+            }
+            .page-tool-input {
+                width: 84px;
+            }
             .container { padding: 12px; }
             .video-info h2 { font-size: 15px; }
             .video-info .meta { font-size: 12px; }
@@ -331,6 +402,22 @@
             当前页: <span id="currentPage">-</span> |
             总数: <span id="totalCount">-</span>
             <button class="btn btn-clear" onclick="clearReviewed()">清除审核记录</button>
+        </div>
+    </div>
+    <div class="page-tools">
+        <div class="page-tools-inner">
+            <div class="page-tool-group">
+                <label for="pageJumpInput">跳转到第</label>
+                <input type="number" min="1" step="1" id="pageJumpInput" class="page-tool-input" placeholder="页码" aria-label="输入要跳转的页码" />
+                <span>页</span>
+                <button class="btn btn-page" type="button" id="btnPageJump" onclick="jumpToPage()">跳转</button>
+            </div>
+            <div class="page-tool-group">
+                <label for="reviewedPageInput">已审核到第</label>
+                <input type="number" min="0" step="1" id="reviewedPageInput" class="page-tool-input" placeholder="页码" aria-label="输入已审核到的页码" />
+                <span>页</span>
+                <button class="btn btn-mark" type="button" id="btnReviewedPage" onclick="markReviewedPages()">标记</button>
+            </div>
         </div>
     </div>
 
@@ -538,6 +625,7 @@
             document.getElementById('reviewedCount').textContent = getReviewedIds().length;
             document.getElementById('currentPage').textContent = currentPage + '/' + totalPages;
             document.getElementById('totalCount').textContent = totalCount;
+            document.getElementById('pageJumpInput').value = currentPage;
         }
 
         function showToast(msg, type) {
@@ -552,6 +640,17 @@
             const m = Math.floor(seconds / 60);
             const s = Math.floor(seconds % 60);
             return m + '分' + s + '秒';
+        }
+
+        function getBoundedPageNumber(value, minimum) {
+            const page = parseInt(value, 10);
+            if (Number.isNaN(page) || page < minimum) {
+                return null;
+            }
+            if (totalPages > 0) {
+                return Math.min(page, totalPages);
+            }
+            return page;
         }
 
         async function loadVideos(options = {}) {
@@ -867,6 +966,39 @@
             }
         }
 
+        function jumpToPage() {
+            const targetPage = getBoundedPageNumber(document.getElementById('pageJumpInput').value, 1);
+            if (!targetPage) {
+                showToast('请输入有效页码', 'error');
+                return;
+            }
+            if (targetPage === currentPage) {
+                showToast('已在当前页', 'info');
+                return;
+            }
+
+            currentPage = targetPage;
+            currentIndex = 0;
+            loadVideos({ preferredIndex: 0 });
+        }
+
+        function markReviewedPages() {
+            const reviewedPage = getBoundedPageNumber(document.getElementById('reviewedPageInput').value, 0);
+            if (reviewedPage === null) {
+                showToast('请输入有效的已审核页码', 'error');
+                return;
+            }
+
+            const nextPage = totalPages > 0
+                ? Math.min(reviewedPage + 1, totalPages)
+                : reviewedPage + 1;
+
+            currentPage = Math.max(1, nextPage);
+            currentIndex = 0;
+            loadVideos({ preferredIndex: 0 });
+            showToast(`已标记前 ${reviewedPage} 页为已审核`, 'success');
+        }
+
         function doSearch() {
             const input = document.getElementById('searchInput').value.trim();
             searchKeyword = input;
@@ -894,6 +1026,12 @@
             // Allow Enter key to trigger search
             document.getElementById('searchInput').addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') doSearch();
+            });
+            document.getElementById('pageJumpInput').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') jumpToPage();
+            });
+            document.getElementById('reviewedPageInput').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') markReviewedPages();
             });
         })();
     </script>
