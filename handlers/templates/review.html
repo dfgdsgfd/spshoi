@@ -642,9 +642,9 @@
             return m + '分' + s + '秒';
         }
 
-        function getBoundedPageNumber(value, minimum) {
+        function getBoundedPageNumber(value, minPage) {
             const page = parseInt(value, 10);
-            if (Number.isNaN(page) || page < minimum) {
+            if (Number.isNaN(page) || page < minPage) {
                 return null;
             }
             if (totalPages > 0) {
@@ -1017,7 +1017,7 @@
             loadVideos();
         }
 
-        // Init: restore page state, load reviewed IDs, then start
+        // Init: restore remembered page state from the server, load reviewed IDs, then resume review
         (async () => {
             await loadPageNumberFromServer();
             await fetchReviewedIds();
