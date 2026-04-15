@@ -30,11 +30,14 @@
         .container {
             flex: 1;
             width: 100%;
-            max-width: 1200px;
+            max-width: 1360px;
             padding: 20px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
+        }
+        .content-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 320px;
+            gap: 20px;
+            align-items: start;
         }
         .video-info {
             width: 100%;
@@ -178,8 +181,99 @@
         }
         .empty-state h2 { font-size: 24px; margin-bottom: 12px; color: #ccc; }
         .empty-state p { font-size: 16px; }
+        .playlist-panel {
+            background: #16213e;
+            border: 1px solid #0f3460;
+            border-radius: 10px;
+            padding: 16px;
+            min-height: 400px;
+        }
+        .playlist-panel h3 {
+            font-size: 16px;
+            margin-bottom: 12px;
+            color: #fff;
+        }
+        .playlist-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 72vh;
+            overflow-y: auto;
+        }
+        .playlist-item {
+            width: 100%;
+            border: 1px solid #0f3460;
+            border-radius: 8px;
+            background: #1a1a2e;
+            color: #eee;
+            padding: 12px;
+            text-align: left;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .playlist-item:hover {
+            border-color: #3498db;
+            transform: translateY(-1px);
+        }
+        .playlist-item.current {
+            border-color: #e94560;
+            box-shadow: 0 0 0 1px rgba(233, 69, 96, 0.3);
+        }
+        .playlist-item.reviewed {
+            opacity: 0.72;
+        }
+        .playlist-item-title {
+            font-size: 14px;
+            font-weight: 600;
+            line-height: 1.4;
+            margin-bottom: 8px;
+            word-break: break-word;
+        }
+        .playlist-item-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #999;
+        }
+        .playlist-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 54px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+        .playlist-badge.pending {
+            background: rgba(52, 152, 219, 0.18);
+            color: #5dade2;
+        }
+        .playlist-badge.reviewed {
+            background: rgba(39, 174, 96, 0.18);
+            color: #58d68d;
+        }
+        .playlist-empty {
+            color: #888;
+            font-size: 14px;
+            text-align: center;
+            padding: 24px 12px;
+        }
 
         /* Mobile responsive */
+        @media (max-width: 960px) {
+            .content-layout {
+                grid-template-columns: 1fr;
+            }
+            .playlist-panel {
+                min-height: 0;
+            }
+            .playlist-list {
+                max-height: none;
+            }
+        }
         @media (max-width: 600px) {
             .header {
                 flex-direction: column;
@@ -218,6 +312,9 @@
             .empty-state { min-height: 250px; }
             .empty-state h2 { font-size: 20px; }
             .empty-state p { font-size: 14px; }
+            .playlist-panel {
+                padding: 12px;
+            }
         }
     </style>
 </head>
@@ -238,30 +335,37 @@
     </div>
 
     <div class="container">
-        <div id="videoSection">
-            <div class="video-info">
-                <h2 id="videoTitle">加载中...</h2>
-                <div class="meta">
-                    ID: <span id="videoId">-</span> |
-                    时长: <span id="videoDuration">-</span> |
-                    创建: <span id="videoDate">-</span>
+        <div id="contentLayout" class="content-layout">
+            <div id="videoSection">
+                <div class="video-info">
+                    <h2 id="videoTitle">加载中...</h2>
+                    <div class="meta">
+                        ID: <span id="videoId">-</span> |
+                        时长: <span id="videoDuration">-</span> |
+                        创建: <span id="videoDate">-</span>
+                    </div>
+                </div>
+
+                <div class="player-wrapper">
+                    <img id="videoCover" style="width:100%;height:100%;object-fit:contain;position:absolute;top:0;left:0;z-index:1;cursor:pointer;" onclick="startPlayback()" />
+                    <video id="videoPlayer" controls playsinline></video>
+                    <div class="loading" id="loadingText">加载中...</div>
+                </div>
+
+                <div class="controls">
+                    <button class="btn btn-prev" id="btnPrev" onclick="prevVideo()" disabled aria-label="上一个视频">⏮ 上一个</button>
+                    <button class="btn btn-approve" id="btnApprove" onclick="approveVideo()">✅ 通过</button>
+                    <button class="btn btn-next" id="btnNext" onclick="nextVideo()">⏭ 下一个</button>
+                    <button class="btn btn-reject" id="btnReject" onclick="rejectVideo()">❌ 拒绝</button>
                 </div>
             </div>
 
-            <div class="player-wrapper">
-                <img id="videoCover" style="width:100%;height:100%;object-fit:contain;position:absolute;top:0;left:0;z-index:1;cursor:pointer;" onclick="startPlayback()" />
-                <video id="videoPlayer" controls playsinline></video>
-                <div class="loading" id="loadingText">加载中...</div>
-            </div>
-
-            <div class="controls">
-                <button class="btn btn-prev" id="btnPrev" onclick="prevVideo()" disabled aria-label="上一个视频">⏮ 上一个</button>
-                <button class="btn btn-approve" id="btnApprove" onclick="approveVideo()">✅ 通过</button>
-                <button class="btn btn-next" id="btnNext" onclick="nextVideo()">⏭ 下一个</button>
-                <button class="btn btn-reject" id="btnReject" onclick="rejectVideo()">❌ 拒绝</button>
-            </div>
+            <aside class="playlist-panel">
+                <h3>当前页视频列表</h3>
+                <div id="videoList" class="playlist-list"></div>
+            </aside>
         </div>
-
+ 
         <div id="emptyState" class="empty-state" style="display:none">
             <h2>🎉 全部审核完毕</h2>
             <p>当前页面的所有视频已审核完毕，正在加载下一页...</p>
@@ -283,6 +387,64 @@
         const HLS_MAX_RETRIES = 3;
         let reviewedIds = [];
         let searchKeyword = '';
+
+        function isReviewed(video) {
+            return reviewedIds.includes(video.id);
+        }
+
+        function findNextPendingIndex(startIndex) {
+            for (let i = startIndex; i < videos.length; i++) {
+                if (!isReviewed(videos[i])) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        function renderVideoList() {
+            const listEl = document.getElementById('videoList');
+            listEl.innerHTML = '';
+
+            if (!videos.length) {
+                const emptyEl = document.createElement('div');
+                emptyEl.className = 'playlist-empty';
+                emptyEl.textContent = '当前页暂无可展示的视频';
+                listEl.appendChild(emptyEl);
+                return;
+            }
+
+            videos.forEach((video, index) => {
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'playlist-item';
+                if (index === currentIndex) item.classList.add('current');
+                if (isReviewed(video)) item.classList.add('reviewed');
+                item.onclick = () => {
+                    currentIndex = index;
+                    displayCurrentVideo();
+                };
+
+                const title = document.createElement('div');
+                title.className = 'playlist-item-title';
+                title.textContent = `${index + 1}. ${video.title || '无标题'}`;
+
+                const meta = document.createElement('div');
+                meta.className = 'playlist-item-meta';
+
+                const idText = document.createElement('span');
+                idText.textContent = `ID: ${video.id}`;
+
+                const badge = document.createElement('span');
+                badge.className = 'playlist-badge ' + (isReviewed(video) ? 'reviewed' : 'pending');
+                badge.textContent = isReviewed(video) ? '已审核' : '待审核';
+
+                meta.appendChild(idText);
+                meta.appendChild(badge);
+                item.appendChild(title);
+                item.appendChild(meta);
+                listEl.appendChild(item);
+            });
+        }
 
         // --- Server-side page number persistence ---
         async function loadPageNumberFromServer() {
@@ -351,6 +513,7 @@
                 }
             }
             updateStats();
+            renderVideoList();
         }
 
         async function clearReviewed() {
@@ -363,9 +526,10 @@
                     reviewedIds = [];
                 }
                 await resetServerPageNumber();
+                currentPage = 1;
+                currentIndex = 0;
                 updateStats();
                 showToast('审核记录已清除', 'info');
-                currentPage = 1;
                 loadVideos();
             }
         }
@@ -390,7 +554,8 @@
             return m + '分' + s + '秒';
         }
 
-        async function loadVideos() {
+        async function loadVideos(options = {}) {
+            const { preferredIndex = null, preferLast = false } = options;
             try {
                 const url = new URL(API_BASE + '/videos', window.location.origin);
                 url.searchParams.set('page', currentPage);
@@ -399,63 +564,76 @@
                 if (searchKeyword) {
                     url.searchParams.set('search', searchKeyword);
                 }
-                const resp = await fetch(url);
-                const data = await resp.json();
-                // Save current page number to server for persistence across refreshes
-                await savePageNumberToServer(currentPage);
-                if (data.posts && data.posts.length > 0) {
-                    totalPages = data.total_pages || 1;
-                    totalCount = data.total_posts || data.total || 0;
-                    const reviewed = getReviewedIds();
-                    videos = data.posts.filter(v => !reviewed.includes(v.id));
-                    currentIndex = 0;
-                    updateStats();
 
-                    if (videos.length === 0) {
-                        if (currentPage < totalPages) {
-                            currentPage++;
-                            loadVideos();
-                            return;
-                        }
-                        showEmptyState();
-                        return;
-                    }
-                    showVideoSection();
-                    displayCurrentVideo();
-                } else {
-                    if (currentPage < totalPages) {
+                const resp = await fetch(url);
+                if (!resp.ok) {
+                    throw new Error('接口返回异常');
+                }
+
+                const data = await resp.json();
+                totalPages = data.total_pages || 1;
+                totalCount = data.total_posts || data.total || 0;
+                videos = Array.isArray(data.posts) ? data.posts : [];
+
+                await savePageNumberToServer(currentPage);
+
+                if (!videos.length) {
+                    renderVideoList();
+                    if (currentPage < totalPages && !preferLast) {
                         currentPage++;
                         loadVideos();
                         return;
                     }
                     showEmptyState();
+                    updateStats();
+                    return;
                 }
+
+                if (typeof preferredIndex === 'number') {
+                    currentIndex = Math.max(0, Math.min(preferredIndex, videos.length - 1));
+                } else if (preferLast) {
+                    currentIndex = videos.length - 1;
+                } else {
+                    const nextPendingIndex = findNextPendingIndex(0);
+                    if (nextPendingIndex === -1) {
+                        if (currentPage < totalPages) {
+                            currentPage++;
+                            loadVideos();
+                            return;
+                        }
+                        currentIndex = 0;
+                    } else {
+                        currentIndex = nextPendingIndex;
+                    }
+                }
+
+                showVideoSection();
+                updateStats();
+                displayCurrentVideo();
             } catch (err) {
                 showToast('加载视频失败: ' + err.message, 'error');
             }
         }
 
         function showEmptyState() {
-            document.getElementById('videoSection').style.display = 'none';
+            document.getElementById('contentLayout').style.display = 'none';
             document.getElementById('emptyState').style.display = 'flex';
         }
 
         function showVideoSection() {
-            document.getElementById('videoSection').style.display = 'block';
+            document.getElementById('contentLayout').style.display = 'grid';
             document.getElementById('emptyState').style.display = 'none';
         }
 
         function displayCurrentVideo() {
-            if (currentIndex >= videos.length) {
-                if (currentPage < totalPages) {
-                    currentPage++;
-                    loadVideos();
-                } else {
-                    showEmptyState();
-                }
+            if (!videos.length) {
+                showEmptyState();
+                updateStats();
+                renderVideoList();
                 return;
             }
 
+            currentIndex = Math.max(0, Math.min(currentIndex, videos.length - 1));
             const video = videos[currentIndex];
             document.getElementById('videoTitle').textContent = video.title || '无标题';
             document.getElementById('videoId').textContent = video.id;
@@ -484,6 +662,7 @@
             videoEl.load();
 
             setButtonsEnabled(true);
+            renderVideoList();
         }
 
         async function startPlayback() {
@@ -600,7 +779,26 @@
         }
 
         function updatePrevButton() {
-            document.getElementById('btnPrev').disabled = currentIndex <= 0;
+            document.getElementById('btnPrev').disabled = currentPage <= 1 && currentIndex <= 0;
+        }
+
+        async function moveToNextPendingVideo() {
+            const nextPendingIndex = findNextPendingIndex(currentIndex + 1);
+            if (nextPendingIndex !== -1) {
+                currentIndex = nextPendingIndex;
+                displayCurrentVideo();
+                return;
+            }
+
+            if (currentPage < totalPages) {
+                currentPage++;
+                loadVideos();
+                return;
+            }
+
+            renderVideoList();
+            showEmptyState();
+            updateStats();
         }
 
         async function approveVideo() {
@@ -608,8 +806,7 @@
             const video = videos[currentIndex];
             await addReviewedId(video.id);
             showToast('已通过: ' + video.title, 'success');
-            currentIndex++;
-            displayCurrentVideo();
+            moveToNextPendingVideo();
         }
 
         async function rejectVideo() {
@@ -637,20 +834,37 @@
                 return;
             }
 
-            currentIndex++;
-            displayCurrentVideo();
+            moveToNextPendingVideo();
         }
 
         function nextVideo() {
             if (currentIndex >= videos.length) return;
-            currentIndex++;
-            displayCurrentVideo();
+            if (currentIndex < videos.length - 1) {
+                currentIndex++;
+                displayCurrentVideo();
+                return;
+            }
+
+            if (currentPage < totalPages) {
+                currentPage++;
+                loadVideos({ preferredIndex: 0 });
+                return;
+            }
+
+            showToast('已经是最后一个视频', 'info');
         }
 
         function prevVideo() {
-            if (currentIndex <= 0) return;
-            currentIndex--;
-            displayCurrentVideo();
+            if (currentIndex > 0) {
+                currentIndex--;
+                displayCurrentVideo();
+                return;
+            }
+
+            if (currentPage > 1) {
+                currentPage--;
+                loadVideos({ preferLast: true });
+            }
         }
 
         function doSearch() {
@@ -671,9 +885,9 @@
             loadVideos();
         }
 
-        // Init: always start from page 1 to prioritize newest videos, load reviewed IDs, then start
+        // Init: restore page state, load reviewed IDs, then start
         (async () => {
-            currentPage = 1;
+            await loadPageNumberFromServer();
             await fetchReviewedIds();
             updateStats();
             loadVideos();

@@ -237,6 +237,12 @@ func TestReviewPage(t *testing.T) {
 			if !bytes.Contains(w.Body.Bytes(), []byte("btnReject")) {
 				t.Error("expected review page to contain reject button")
 			}
+			if !bytes.Contains(w.Body.Bytes(), []byte("videoList")) {
+				t.Error("expected review page to contain the video list")
+			}
+			if !bytes.Contains(w.Body.Bytes(), []byte("loadPageNumberFromServer")) {
+				t.Error("expected review page to restore remembered page state")
+			}
 		})
 	}
 }
