@@ -311,11 +311,15 @@ func GetVideos(c *gin.Context) {
 	if order != "ASC" && order != "DESC" {
 		order = "DESC"
 	}
+	includeDisabled := c.Query("include_disabled")
 
 	url := fmt.Sprintf("%s/pyvideo2/api/get_posts?page=%d&per_page=%d&sort_order=%s",
 		getBaseURL(), page, perPage, order)
 	if search != "" {
 		url += "&search=" + url_pkg.QueryEscape(search)
+	}
+	if includeDisabled == "true" {
+		url += "&include_disabled=true"
 	}
 
 	client := &http.Client{Timeout: 15 * time.Second}

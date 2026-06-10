@@ -319,6 +319,73 @@
             padding: 24px 12px;
         }
 
+        .btn-blocked {
+            background: #e67e22;
+            color: #fff;
+            padding: 8px 16px;
+            font-size: 13px;
+            min-width: auto;
+        }
+        .btn-blocked:hover:not(:disabled) { background: #d35400; }
+        .btn-blocked.active {
+            background: #d35400;
+            box-shadow: 0 0 0 2px #e67e22;
+        }
+        .password-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.85);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        .password-dialog {
+            background: #16213e;
+            border: 1px solid #0f3460;
+            border-radius: 12px;
+            padding: 32px;
+            text-align: center;
+            min-width: 320px;
+        }
+        .password-dialog h2 {
+            color: #e94560;
+            margin-bottom: 16px;
+            font-size: 20px;
+        }
+        .password-dialog input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid #0f3460;
+            border-radius: 8px;
+            background: #1a1a2e;
+            color: #eee;
+            font-size: 16px;
+            outline: none;
+            margin-bottom: 16px;
+        }
+        .password-dialog input:focus {
+            border-color: #e94560;
+        }
+        .password-dialog .btn-login {
+            background: #e94560;
+            color: #fff;
+            padding: 12px 32px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+        }
+        .password-dialog .btn-login:hover { background: #c0392b; }
+        .password-dialog .error-msg {
+            color: #e74c3c;
+            font-size: 14px;
+            margin-top: 8px;
+            display: none;
+        }
+
         /* Mobile responsive */
         @media (max-width: 960px) {
             .content-layout {
@@ -390,6 +457,15 @@
     </style>
 </head>
 <body>
+    <div class="password-overlay" id="passwordOverlay">
+        <div class="password-dialog">
+            <h2>🔒 审核登录</h2>
+            <p style="color:#999;margin-bottom:16px;">请输入密码以进入审核页面</p>
+            <input type="password" id="passwordInput" placeholder="请输入密码..." autofocus />
+            <button class="btn-login" onclick="checkPassword()">确认登录</button>
+            <div class="error-msg" id="passwordError">密码错误，请重试</div>
+        </div>
+    </div>
     <div class="header">
         <h1>📹 视频审核</h1>
         <div class="search-bar">
@@ -411,6 +487,9 @@
                 <input type="number" min="1" step="1" id="pageJumpInput" class="page-tool-input" placeholder="页码" aria-label="输入要跳转的页码" />
                 <span>页</span>
                 <button class="btn btn-page" type="button" id="btnPageJump" onclick="jumpToPage()">跳转</button>
+            </div>
+            <div class="page-tool-group">
+                <button class="btn btn-blocked" type="button" id="btnToggleBlocked" onclick="toggleBlockedVideos()">🚫 查看被屏蔽视频</button>
             </div>
             <div class="page-tool-group">
                 <label for="reviewedPageInput">已审核到第</label>
@@ -463,7 +542,9 @@
 
     <script>
         const API_BASE = window.location.origin + '/api';
+        const REVIEW_PASSWORD = 'Xiner#4351';
 
+        let isAuthenticated = false;
         let videos = [];
         let currentIndex = 0;
         let currentPage = 1;
@@ -474,6 +555,40 @@
         const HLS_MAX_RETRIES = 3;
         let reviewedIds = [];
         let searchKeyword = '';
+        let showBlocked = false;
+
+        function checkPassword() {
+            const input = document.getElementById('passwordInput').value;
+            if (input === REVIEW_PASSWORD) {
+                isAuthenticated = true;
+                document.getElementById('passwordOverlay').style.display = 'none';
+                initApp();
+            } else {
+                document.getElementById('passwordError').style.display = 'block';
+                document.getElementById('passwordInput').value = '';
+                document.getElementById('passwordInput').focus();
+            }
+        }
+
+        // Allow Enter key on password input
+        document.getElementById('passwordInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') checkPassword();
+        });
+
+        function toggleBlockedVideos() {
+            showBlocked = !showBlocked;
+            const btn = document.getElementById('btnToggleBlocked');
+            if (showBlocked) {
+                btn.classList.add('active');
+                btn.textContent = '🚫 隐藏被屏蔽视频';
+            } else {
+                btn.classList.remove('active');
+                btn.textContent = '🚫 查看被屏蔽视频';
+            }
+            currentPage = 1;
+            currentIndex = 0;
+            loadVideos();
+        }
 
         function isReviewed(video) {
             return reviewedIds.includes(video.id);
@@ -662,6 +777,9 @@
                 url.searchParams.set('order', 'DESC');
                 if (searchKeyword) {
                     url.searchParams.set('search', searchKeyword);
+                }
+                if (showBlocked) {
+                    url.searchParams.set('include_disabled', 'true');
                 }
 
                 const resp = await fetch(url);
@@ -1017,8 +1135,8 @@
             loadVideos();
         }
 
-        // Init: restore remembered page state from the server, load reviewed IDs, then resume review
-        (async () => {
+        // Init: show password dialog first, then start app after authentication
+        async function initApp() {
             await loadPageNumberFromServer();
             await fetchReviewedIds();
             updateStats();
@@ -1033,7 +1151,7 @@
             document.getElementById('reviewedPageInput').addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') markReviewedPages();
             });
-        })();
+        }
     </script>
 </body>
 </html>
