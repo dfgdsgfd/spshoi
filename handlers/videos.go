@@ -36,6 +36,10 @@ func getAPIKey() string {
 	return defaultAPIKey
 }
 
+func getSessionCookie() string {
+	return os.Getenv("VIDEO_SESSION_COOKIE")
+}
+
 // VideoListResponse represents the response from the video list API
 type VideoListResponse struct {
 	Posts      []interface{} `json:"posts"`
@@ -312,8 +316,8 @@ func GetVideos(c *gin.Context) {
 		order = "DESC"
 	}
 
-	url := fmt.Sprintf("%s/pyvideo2/api/get_posts?page=%d&sort_order=%s",
-		getBaseURL(), page, order)
+	url := fmt.Sprintf("%s/pyvideo2/api/videos/manage?page=%d&limit=%d&sort_order=%s",
+		getBaseURL(), page, perPage, order)
 	if search != "" {
 		url += "&search=" + url_pkg.QueryEscape(search)
 	}
@@ -326,6 +330,14 @@ func GetVideos(c *gin.Context) {
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-API-KEY", getAPIKey())
+
+	// The /pyvideo2/api/videos/manage endpoint requires session cookie authentication
+	if sessionCookie := getSessionCookie(); sessionCookie != "" {
+		req.AddCookie(&http.Cookie{
+			Name:  "pyvideo2_session",
+			Value: sessionCookie,
+		})
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
