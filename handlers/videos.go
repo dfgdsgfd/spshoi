@@ -18,9 +18,8 @@ import (
 )
 
 const (
-	defaultBaseURL       = "https://v.yuelk.com"
-	defaultManageBaseURL = "https://v2.yuelk.com"
-	defaultAPIKey        = "ef13c2bdf8cd8550ed4c37c323a558c9985d6d928d39a3b53bed864460221d56"
+	defaultBaseURL  = "https://v.yuelk.com"
+	defaultAPIKey   = "ef13c2bdf8cd8550ed4c37c323a558c9985d6d928d39a3b53bed864460221d56"
 )
 
 func getBaseURL() string {
@@ -28,13 +27,6 @@ func getBaseURL() string {
 		return v
 	}
 	return defaultBaseURL
-}
-
-func getManageBaseURL() string {
-	if v := os.Getenv("VIDEO_MANAGE_BASE_URL"); v != "" {
-		return v
-	}
-	return defaultManageBaseURL
 }
 
 func getAPIKey() string {
