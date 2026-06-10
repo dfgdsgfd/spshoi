@@ -320,8 +320,8 @@ func GetVideos(c *gin.Context) {
 		order = "DESC"
 	}
 
-	url := fmt.Sprintf("%s/pyvideo2/api/videos/manage?page=%d&limit=%d&sort_order=%s",
-		getManageBaseURL(), page, perPage, order)
+	url := fmt.Sprintf("%s/pyvideo2/api/get_posts?page=%d&sort_order=%s",
+		getBaseURL(), page, order)
 	if search != "" {
 		url += "&search=" + url_pkg.QueryEscape(search)
 	}
