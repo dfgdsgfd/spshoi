@@ -457,12 +457,13 @@
     </style>
 </head>
 <body>
-    <div class="password-overlay" id="passwordOverlay">
+    <div class="password-overlay" id="passwordOverlay" style="display:none">
         <div class="password-dialog">
-            <h2>🔒 审核登录</h2>
-            <p style="color:#999;margin-bottom:16px;">请输入密码以进入审核页面</p>
-            <input type="password" id="passwordInput" placeholder="请输入密码..." autofocus />
-            <button class="btn-login" onclick="checkPassword()">确认登录</button>
+            <h2>🔒 操作验证</h2>
+            <p style="color:#999;margin-bottom:16px;">请输入操作密码</p>
+            <input type="password" id="passwordInput" placeholder="请输入密码..." />
+            <button class="btn-login" onclick="submitPassword()">确认</button>
+            <button class="btn-login" style="background:#7f8c8d;margin-top:8px;" onclick="cancelPassword()">取消</button>
             <div class="error-msg" id="passwordError">密码错误，请重试</div>
         </div>
     </div>
@@ -487,9 +488,6 @@
                 <input type="number" min="1" step="1" id="pageJumpInput" class="page-tool-input" placeholder="页码" aria-label="输入要跳转的页码" />
                 <span>页</span>
                 <button class="btn btn-page" type="button" id="btnPageJump" onclick="jumpToPage()">跳转</button>
-            </div>
-            <div class="page-tool-group">
-                <button class="btn btn-blocked" type="button" id="btnToggleBlocked" onclick="toggleBlockedVideos()">🚫 查看被屏蔽视频</button>
             </div>
             <div class="page-tool-group">
                 <label for="reviewedPageInput">已审核到第</label>
@@ -545,6 +543,7 @@
         const REVIEW_PASSWORD = 'Xiner#4351';
 
         let isAuthenticated = false;
+        let pendingAction = null;
         let videos = [];
         let currentIndex = 0;
         let currentPage = 1;
@@ -555,14 +554,29 @@
         const HLS_MAX_RETRIES = 3;
         let reviewedIds = [];
         let searchKeyword = '';
-        let showBlocked = false;
 
-        function checkPassword() {
+        // Password verification - only prompt if not yet authenticated
+        function requirePassword(action) {
+            if (isAuthenticated) {
+                action();
+                return;
+            }
+            pendingAction = action;
+            document.getElementById('passwordError').style.display = 'none';
+            document.getElementById('passwordInput').value = '';
+            document.getElementById('passwordOverlay').style.display = 'flex';
+            document.getElementById('passwordInput').focus();
+        }
+
+        function submitPassword() {
             const input = document.getElementById('passwordInput').value;
             if (input === REVIEW_PASSWORD) {
                 isAuthenticated = true;
                 document.getElementById('passwordOverlay').style.display = 'none';
-                initApp();
+                if (pendingAction) {
+                    pendingAction();
+                    pendingAction = null;
+                }
             } else {
                 document.getElementById('passwordError').style.display = 'block';
                 document.getElementById('passwordInput').value = '';
@@ -570,25 +584,16 @@
             }
         }
 
+        function cancelPassword() {
+            document.getElementById('passwordOverlay').style.display = 'none';
+            pendingAction = null;
+        }
+
         // Allow Enter key on password input
         document.getElementById('passwordInput').addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') checkPassword();
+            if (e.key === 'Enter') submitPassword();
+            if (e.key === 'Escape') cancelPassword();
         });
-
-        function toggleBlockedVideos() {
-            showBlocked = !showBlocked;
-            const btn = document.getElementById('btnToggleBlocked');
-            if (showBlocked) {
-                btn.classList.add('active');
-                btn.textContent = '🚫 隐藏被屏蔽视频';
-            } else {
-                btn.classList.remove('active');
-                btn.textContent = '🚫 查看被屏蔽视频';
-            }
-            currentPage = 1;
-            currentIndex = 0;
-            loadVideos();
-        }
 
         function isReviewed(video) {
             return reviewedIds.includes(video.id);
@@ -719,21 +724,23 @@
         }
 
         async function clearReviewed() {
-            if (confirm('确定清除所有审核记录？清除后已审核的视频将重新显示。')) {
-                try {
-                    const resp = await fetch(API_BASE + '/review/state', { method: 'DELETE' });
-                    const data = await resp.json();
-                    reviewedIds = data.reviewed_ids || [];
-                } catch {
-                    reviewedIds = [];
+            requirePassword(async () => {
+                if (confirm('确定清除所有审核记录？清除后已审核的视频将重新显示。')) {
+                    try {
+                        const resp = await fetch(API_BASE + '/review/state', { method: 'DELETE' });
+                        const data = await resp.json();
+                        reviewedIds = data.reviewed_ids || [];
+                    } catch {
+                        reviewedIds = [];
+                    }
+                    await resetServerPageNumber();
+                    currentPage = 1;
+                    currentIndex = 0;
+                    updateStats();
+                    showToast('审核记录已清除', 'info');
+                    loadVideos();
                 }
-                await resetServerPageNumber();
-                currentPage = 1;
-                currentIndex = 0;
-                updateStats();
-                showToast('审核记录已清除', 'info');
-                loadVideos();
-            }
+            });
         }
 
         function updateStats() {
@@ -773,13 +780,10 @@
             try {
                 const url = new URL(API_BASE + '/videos', window.location.origin);
                 url.searchParams.set('page', currentPage);
-                url.searchParams.set('per_page', '20');
+                url.searchParams.set('per_page', '24');
                 url.searchParams.set('order', 'DESC');
                 if (searchKeyword) {
                     url.searchParams.set('search', searchKeyword);
-                }
-                if (showBlocked) {
-                    url.searchParams.set('include_disabled', 'true');
                 }
 
                 const resp = await fetch(url);
@@ -1020,38 +1024,42 @@
 
         async function approveVideo() {
             if (currentIndex >= videos.length) return;
-            const video = videos[currentIndex];
-            await addReviewedId(video.id);
-            showToast('已通过: ' + video.title, 'success');
-            moveToNextPendingVideo();
+            requirePassword(async () => {
+                const video = videos[currentIndex];
+                await addReviewedId(video.id);
+                showToast('已通过: ' + video.title, 'success');
+                moveToNextPendingVideo();
+            });
         }
 
         async function rejectVideo() {
             if (currentIndex >= videos.length) return;
-            const video = videos[currentIndex];
-            setButtonsEnabled(false);
+            requirePassword(async () => {
+                const video = videos[currentIndex];
+                setButtonsEnabled(false);
 
-            try {
-                const resp = await fetch(API_BASE + '/videos/batch-disable', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ post_ids: [video.id] }),
-                });
-                const data = await resp.json();
-                if (resp.ok && data.disabled > 0) {
-                    await addReviewedId(video.id);
-                    showToast(`已拒绝并禁用: ${video.title}`, 'error');
-                } else {
-                    await addReviewedId(video.id);
-                    showToast(`拒绝操作已记录 (上游: ${data.results?.[0]?.message || 'unknown'})`, 'info');
+                try {
+                    const resp = await fetch(API_BASE + '/videos/batch-disable', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ post_ids: [video.id] }),
+                    });
+                    const data = await resp.json();
+                    if (resp.ok && data.disabled > 0) {
+                        await addReviewedId(video.id);
+                        showToast(`已拒绝并禁用: ${video.title}`, 'error');
+                    } else {
+                        await addReviewedId(video.id);
+                        showToast(`拒绝操作已记录 (上游: ${data.results?.[0]?.message || 'unknown'})`, 'info');
+                    }
+                } catch (err) {
+                    showToast(`禁用请求失败: ${err.message}`, 'error');
+                    setButtonsEnabled(true);
+                    return;
                 }
-            } catch (err) {
-                showToast(`禁用请求失败: ${err.message}`, 'error');
-                setButtonsEnabled(true);
-                return;
-            }
 
-            moveToNextPendingVideo();
+                moveToNextPendingVideo();
+            });
         }
 
         function nextVideo() {
@@ -1135,8 +1143,8 @@
             loadVideos();
         }
 
-        // Init: show password dialog first, then start app after authentication
-        async function initApp() {
+        // Init: restore remembered page state from the server, load reviewed IDs, then resume review
+        (async () => {
             await loadPageNumberFromServer();
             await fetchReviewedIds();
             updateStats();
@@ -1151,7 +1159,7 @@
             document.getElementById('reviewedPageInput').addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') markReviewedPages();
             });
-        }
+        })();
     </script>
 </body>
 </html>
