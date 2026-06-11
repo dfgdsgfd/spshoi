@@ -25,8 +25,8 @@ go build -o video-center .
 export VIDEO_API_KEY="your-api-key-here"
 # Required: session cookie for the upstream manage API (pyvideo2_session value)
 export VIDEO_SESSION_COOKIE="your-session-cookie-here"
-# Optional: override the upstream base URL (defaults to https://v.yuelk.com)
-# export VIDEO_API_BASE_URL="https://v.yuelk.com"
+# Optional: override the upstream base URL (defaults to https://v2.yuelk.com)
+# export VIDEO_API_BASE_URL="https://v2.yuelk.com"
 
 # Run
 ./video-center

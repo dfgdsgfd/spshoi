@@ -33,6 +33,7 @@ var staticAllowedProxyHosts = []string{
 	"edgecdn2-tc.yuelk.com",
 	"edgeone-cdn.yuelk.com",
 	"v.yuelk.com",
+	"v2.yuelk.com",
 }
 
 // getAllowedProxyHosts returns the list of allowed proxy hosts, including the

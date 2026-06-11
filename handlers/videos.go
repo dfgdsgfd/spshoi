@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	defaultBaseURL  = "https://v.yuelk.com"
+	defaultBaseURL  = "https://v2.yuelk.com"
 	defaultAPIKey   = "ef13c2bdf8cd8550ed4c37c323a558c9985d6d928d39a3b53bed864460221d56"
 )
 
