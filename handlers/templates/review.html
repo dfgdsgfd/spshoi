@@ -836,6 +836,9 @@
                     currentIndex = Math.max(0, Math.min(preferredIndex, videos.length - 1));
                 } else if (preferLast) {
                     currentIndex = videos.length - 1;
+                } else if (showDisabledOnly) {
+                    // When filtering blocked videos, show all of them regardless of review status
+                    currentIndex = 0;
                 } else {
                     const nextPendingIndex = findNextPendingIndex(0);
                     if (nextPendingIndex === -1) {
@@ -1026,6 +1029,22 @@
         }
 
         async function moveToNextPendingVideo() {
+            if (showDisabledOnly) {
+                // When filtering blocked videos, just move to next video in the list
+                if (currentIndex + 1 < videos.length) {
+                    currentIndex++;
+                    displayCurrentVideo();
+                } else if (currentPage < totalPages) {
+                    currentPage++;
+                    loadVideos();
+                } else {
+                    renderVideoList();
+                    showEmptyState();
+                    updateStats();
+                }
+                return;
+            }
+
             const nextPendingIndex = findNextPendingIndex(currentIndex + 1);
             if (nextPendingIndex !== -1) {
                 currentIndex = nextPendingIndex;
