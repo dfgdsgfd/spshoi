@@ -658,7 +658,7 @@
                 badge.className = 'playlist-badge ' + (isReviewed(video) ? 'reviewed' : 'pending');
                 badge.textContent = isReviewed(video) ? '已审核' : '待审核';
 
-                if (video.enable === false) {
+                if (isVideoDisabled(video)) {
                     const disabledBadge = document.createElement('span');
                     disabledBadge.className = 'playlist-badge';
                     disabledBadge.style.background = '#e94560';
@@ -1184,9 +1184,13 @@
             loadVideos();
         }
 
+        function isVideoDisabled(video) {
+            return video.enable === false || video.enable === 0;
+        }
+
         function applyDisabledFilter(list) {
             if (!showDisabledOnly) return list;
-            return list.filter(v => v.enable === false);
+            return list.filter(v => isVideoDisabled(v));
         }
 
         function toggleDisabledFilter() {
