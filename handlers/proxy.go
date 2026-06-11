@@ -17,7 +17,7 @@ import (
 const (
 	proxyVideoPath          = "/api/proxy/video?url="
 	proxyImagePath          = "/api/proxy/image?url="
-	defaultVideoPlayBaseURL = "http://192.168.80.101:7896"
+	defaultVideoPlayBaseURL = "https://spcs.yuelk.com:29443"
 	defaultImageAPIKey      = "co0slUKg6gA89AiV9oWbKqacVk0yph67"
 )
 
@@ -34,6 +34,7 @@ var staticAllowedProxyHosts = []string{
 	"edgeone-cdn.yuelk.com",
 	"v.yuelk.com",
 	"v2.yuelk.com",
+	"spcs.yuelk.com",
 }
 
 // getAllowedProxyHosts returns the list of allowed proxy hosts, including the

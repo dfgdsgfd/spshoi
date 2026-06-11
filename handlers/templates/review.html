@@ -199,6 +199,25 @@
             min-width: auto;
         }
         .btn-mark:hover:not(:disabled) { background: #7d3c98; }
+        .filter-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: 12px;
+            font-size: 13px;
+            color: #aaa;
+            cursor: pointer;
+            user-select: none;
+        }
+        .filter-toggle input[type="checkbox"] {
+            accent-color: #e94560;
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+        .filter-toggle.active {
+            color: #e94560;
+        }
         .search-bar input {
             padding: 8px 12px;
             border: 1px solid #0f3460;
@@ -466,6 +485,10 @@
             已审核: <span id="reviewedCount">0</span> 个 |
             当前页: <span id="currentPage">-</span> |
             总数: <span id="totalCount">-</span>
+            <label class="filter-toggle" id="filterToggleLabel">
+                <input type="checkbox" id="filterDisabled" onchange="toggleDisabledFilter()" />
+                只显示被屏蔽视频
+            </label>
             <button class="btn btn-clear" onclick="clearReviewed()">清除审核记录</button>
         </div>
     </div>
@@ -533,6 +556,8 @@
         let isAuthenticated = false;
         let pendingAction = null;
         let videos = [];
+        let allVideos = []; // unfiltered list from API
+        let showDisabledOnly = false;
         let currentIndex = 0;
         let currentPage = 1;
         let totalPages = 1;
@@ -632,6 +657,14 @@
                 const badge = document.createElement('span');
                 badge.className = 'playlist-badge ' + (isReviewed(video) ? 'reviewed' : 'pending');
                 badge.textContent = isReviewed(video) ? '已审核' : '待审核';
+
+                if (video.enable === false) {
+                    const disabledBadge = document.createElement('span');
+                    disabledBadge.className = 'playlist-badge';
+                    disabledBadge.style.background = '#e94560';
+                    disabledBadge.textContent = '已屏蔽';
+                    meta.appendChild(disabledBadge);
+                }
 
                 meta.appendChild(idText);
                 meta.appendChild(badge);
@@ -782,7 +815,8 @@
                 const data = await resp.json();
                 totalPages = data.total_pages || 1;
                 totalCount = data.total_posts || data.total || 0;
-                videos = Array.isArray(data.posts) ? data.posts : [];
+                allVideos = Array.isArray(data.posts) ? data.posts : [];
+                videos = applyDisabledFilter(allVideos);
 
                 await savePageNumberToServer(currentPage);
 
@@ -1129,6 +1163,31 @@
             currentIndex = 0;
             document.getElementById('btnClearSearch').style.display = 'none';
             loadVideos();
+        }
+
+        function applyDisabledFilter(list) {
+            if (!showDisabledOnly) return list;
+            return list.filter(v => v.enable === false);
+        }
+
+        function toggleDisabledFilter() {
+            showDisabledOnly = document.getElementById('filterDisabled').checked;
+            const label = document.getElementById('filterToggleLabel');
+            if (showDisabledOnly) {
+                label.classList.add('active');
+            } else {
+                label.classList.remove('active');
+            }
+            // Re-apply filter on current data
+            videos = applyDisabledFilter(allVideos);
+            currentIndex = 0;
+            renderVideoList();
+            if (videos.length) {
+                displayCurrentVideo();
+            } else {
+                showEmptyState();
+            }
+            updateStats();
         }
 
         // Init: restore remembered page state from the server, load reviewed IDs, then resume review
