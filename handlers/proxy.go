@@ -91,6 +91,29 @@ func replaceVideoHost(videoURL string) string {
 	return videoURL
 }
 
+func buildVideoURLFromPath(videoPath string) string {
+	videoPath = strings.TrimSpace(videoPath)
+	if videoPath == "" {
+		return ""
+	}
+
+	parsedURL, err := url.Parse(videoPath)
+	if err == nil && parsedURL.Scheme != "" && parsedURL.Host != "" {
+		return replaceVideoHost(videoPath)
+	}
+
+	return getVideoPlayBaseURL() + "/" + strings.TrimLeft(videoPath, "/")
+}
+
+func buildVideoURLFromPost(postMap map[string]interface{}) string {
+	for _, key := range []string{"original_path", "p720_path"} {
+		if videoURL := buildVideoURLFromPath(stringField(postMap, key)); videoURL != "" {
+			return videoURL
+		}
+	}
+	return ""
+}
+
 func makeProxyURL(originalURL string) string {
 	return proxyVideoPath + url.QueryEscape(originalURL)
 }
@@ -252,7 +275,9 @@ func rewriteVideoURLs(body []byte) []byte {
 		if videoURL, ok := postMap["preview_video_url"].(string); ok && videoURL != "" {
 			postMap["preview_video_url"] = makeProxyURL(replaceVideoHost(videoURL))
 		}
-		if videoURL, ok := postMap["video_url"].(string); ok && videoURL != "" {
+		if videoURL := buildVideoURLFromPost(postMap); videoURL != "" {
+			postMap["video_url"] = makeProxyURL(videoURL)
+		} else if videoURL, ok := postMap["video_url"].(string); ok && videoURL != "" {
 			postMap["video_url"] = makeProxyURL(replaceVideoHost(videoURL))
 		}
 		if imageURL, ok := postMap["first_image"].(string); ok && imageURL != "" {
@@ -265,6 +290,14 @@ func rewriteVideoURLs(body []byte) []byte {
 		return body
 	}
 	return rewritten
+}
+
+func stringField(data map[string]interface{}, key string) string {
+	value, ok := data[key].(string)
+	if !ok {
+		return ""
+	}
+	return value
 }
 
 // ProxyImage godoc

@@ -342,6 +342,61 @@ func TestEnrichWithVideoURLs_UpstreamFailure(t *testing.T) {
 	}
 }
 
+func TestEnrichWithVideoURLs_SkipsFetchWhenPlayablePathExists(t *testing.T) {
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer upstream.Close()
+
+	t.Setenv("VIDEO_API_BASE_URL", upstream.URL)
+
+	input := `{
+		"posts": [
+			{
+				"id": 1,
+				"title": "Video 1",
+				"preview_video_url": "https://edgecdn2-tc.yuelk.com:30086/video/preview/index.m3u8",
+				"p720_path": "video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8"
+			},
+			{
+				"id": 2,
+				"title": "Video 2",
+				"preview_video_url": "https://edgecdn2-tc.yuelk.com:30086/video/preview2/index.m3u8",
+				"original_path": "video/2026-05-24/2c61e89ed6_nrSXt1/default_5b41c0/index.m3u8"
+			}
+		]
+	}`
+
+	result := enrichWithVideoURLs(context.Background(), []byte(input))
+
+	if upstreamCalls != 0 {
+		t.Errorf("expected no upstream get-video-url calls, got %d", upstreamCalls)
+	}
+
+	var data map[string]interface{}
+	if err := json.Unmarshal(result, &data); err != nil {
+		t.Fatalf("failed to parse enriched result: %v", err)
+	}
+	posts := data["posts"].([]interface{})
+	first := posts[0].(map[string]interface{})
+	if got := first["p720_path"].(string); got == "" {
+		t.Error("expected p720_path to remain")
+	}
+	if _, ok := first["video_url"]; ok {
+		t.Error("expected enrichWithVideoURLs not to add video_url when p720_path is present")
+	}
+
+	second := posts[1].(map[string]interface{})
+	if got := second["original_path"].(string); got == "" {
+		t.Error("expected original_path to remain")
+	}
+	if _, ok := second["video_url"]; ok {
+		t.Error("expected enrichWithVideoURLs not to add video_url when original_path is present")
+	}
+}
+
 func TestEnrichWithVideoURLs_InvalidJSON(t *testing.T) {
 	input := []byte("not json")
 	result := enrichWithVideoURLs(context.Background(), input)

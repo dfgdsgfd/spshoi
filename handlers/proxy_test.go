@@ -282,6 +282,106 @@ func TestRewriteVideoURLs_WithVideoURL(t *testing.T) {
 	}
 }
 
+func TestRewriteVideoURLs_WithP720Path(t *testing.T) {
+	input := `{
+		"posts": [
+			{
+				"id": 1,
+				"title": "Test Video",
+				"preview_video_url": "https://edgecdn2-tc.yuelk.com:30086/video/preview/index.m3u8?token=abc",
+				"video_url": "https://edgecdn2-tc.yuelk.com:30086/video/old/index.m3u8?token=def",
+				"p720_path": "video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8"
+			}
+		]
+	}`
+
+	result := rewriteVideoURLs([]byte(input))
+	var data map[string]interface{}
+	json.Unmarshal(result, &data)
+	posts := data["posts"].([]interface{})
+	pm := posts[0].(map[string]interface{})
+
+	videoURL := pm["video_url"].(string)
+	if !strings.HasPrefix(videoURL, proxyVideoPath) {
+		t.Errorf("expected video_url to start with proxy path, got: %s", videoURL)
+	}
+
+	encoded := strings.TrimPrefix(videoURL, proxyVideoPath)
+	decoded, err := url.QueryUnescape(encoded)
+	if err != nil {
+		t.Fatalf("failed to decode video_url: %v", err)
+	}
+	expected := getVideoPlayBaseURL() + "/video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8"
+	if decoded != expected {
+		t.Errorf("expected p720_path-derived URL %q, got %q", expected, decoded)
+	}
+	if strings.Contains(decoded, "/old/") {
+		t.Errorf("expected p720_path to take precedence over stale video_url, got %s", decoded)
+	}
+}
+
+func TestRewriteVideoURLs_WithOriginalPath(t *testing.T) {
+	input := `{
+		"posts": [
+			{
+				"id": 1,
+				"title": "Test Video",
+				"preview_video_url": "https://edgecdn2-tc.yuelk.com:30086/video/preview/index.m3u8?token=abc",
+				"original_path": "video/2026-05-24/2c61e89ed6_nrSXt1/default_5b41c0/index.m3u8"
+			}
+		]
+	}`
+
+	result := rewriteVideoURLs([]byte(input))
+	var data map[string]interface{}
+	json.Unmarshal(result, &data)
+	posts := data["posts"].([]interface{})
+	pm := posts[0].(map[string]interface{})
+
+	videoURL := pm["video_url"].(string)
+	if !strings.HasPrefix(videoURL, proxyVideoPath) {
+		t.Errorf("expected video_url to start with proxy path, got: %s", videoURL)
+	}
+
+	decoded, err := url.QueryUnescape(strings.TrimPrefix(videoURL, proxyVideoPath))
+	if err != nil {
+		t.Fatalf("failed to decode video_url: %v", err)
+	}
+	expected := getVideoPlayBaseURL() + "/video/2026-05-24/2c61e89ed6_nrSXt1/default_5b41c0/index.m3u8"
+	if decoded != expected {
+		t.Errorf("expected original_path-derived URL %q, got %q", expected, decoded)
+	}
+}
+
+func TestRewriteVideoURLs_OriginalPathTakesPrecedence(t *testing.T) {
+	input := `{
+		"posts": [
+			{
+				"id": 1,
+				"title": "Test Video",
+				"preview_video_url": "https://edgecdn2-tc.yuelk.com:30086/video/preview/index.m3u8?token=abc",
+				"original_path": "video/2026-05-24/2c61e89ed6_nrSXt1/default_5b41c0/index.m3u8",
+				"p720_path": "video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8"
+			}
+		]
+	}`
+
+	result := rewriteVideoURLs([]byte(input))
+	var data map[string]interface{}
+	json.Unmarshal(result, &data)
+	posts := data["posts"].([]interface{})
+	pm := posts[0].(map[string]interface{})
+
+	decoded, err := url.QueryUnescape(strings.TrimPrefix(pm["video_url"].(string), proxyVideoPath))
+	if err != nil {
+		t.Fatalf("failed to decode video_url: %v", err)
+	}
+	expected := getVideoPlayBaseURL() + "/video/2026-05-24/2c61e89ed6_nrSXt1/default_5b41c0/index.m3u8"
+	if decoded != expected {
+		t.Errorf("expected original_path to take precedence, got %q", decoded)
+	}
+}
+
 func TestProxyVideo_MissingURL(t *testing.T) {
 	r := setupRouter()
 
@@ -371,6 +471,44 @@ func TestReplaceVideoHost(t *testing.T) {
 	}
 }
 
+func TestBuildVideoURLFromPath(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "relative p720 path",
+			input:    "video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8",
+			expected: getVideoPlayBaseURL() + "/video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8",
+		},
+		{
+			name:     "relative p720 path with leading slash",
+			input:    "/video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8",
+			expected: getVideoPlayBaseURL() + "/video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8",
+		},
+		{
+			name:     "absolute CDN URL",
+			input:    "https://edgecdn2-tc.yuelk.com:30086/video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8",
+			expected: getVideoPlayBaseURL() + "/video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8",
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildVideoURLFromPath(tt.input)
+			if got != tt.expected {
+				t.Errorf("buildVideoURLFromPath(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestMakeImageProxyURL(t *testing.T) {
 	original := "https://v.yuelk.com/pima/wp-content/uploads/video/2025-11-13/abc/vod.webp"
 	result := makeImageProxyURL(original)
@@ -448,5 +586,136 @@ func TestGetVideoURL_MissingPostID(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for missing post_id, got %d", w.Code)
+	}
+}
+
+func TestGetVideoURL_WithP720Path(t *testing.T) {
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer upstream.Close()
+
+	t.Setenv("VIDEO_API_BASE_URL", upstream.URL)
+
+	r := setupRouter()
+	reqBody := `{
+		"post_id": 123,
+		"quality": "720p",
+		"p720_path": "video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8"
+	}`
+	req, _ := http.NewRequest(http.MethodPost, "/api/videos/get-url", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if upstreamCalls != 0 {
+		t.Errorf("expected no upstream calls when p720_path is present, got %d", upstreamCalls)
+	}
+
+	var resp GetVideoURLResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp.VideoURL == "" || !strings.HasPrefix(resp.VideoURL, proxyVideoPath) {
+		t.Fatalf("expected proxied video_url, got %q", resp.VideoURL)
+	}
+
+	decoded, err := url.QueryUnescape(strings.TrimPrefix(resp.VideoURL, proxyVideoPath))
+	if err != nil {
+		t.Fatalf("failed to decode video_url: %v", err)
+	}
+	expected := getVideoPlayBaseURL() + "/video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8"
+	if decoded != expected {
+		t.Errorf("expected %q, got %q", expected, decoded)
+	}
+}
+
+func TestGetVideoURL_WithOriginalPath(t *testing.T) {
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer upstream.Close()
+
+	t.Setenv("VIDEO_API_BASE_URL", upstream.URL)
+
+	r := setupRouter()
+	reqBody := `{
+		"post_id": 123,
+		"quality": "720p",
+		"original_path": "video/2026-05-24/2c61e89ed6_nrSXt1/default_5b41c0/index.m3u8"
+	}`
+	req, _ := http.NewRequest(http.MethodPost, "/api/videos/get-url", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if upstreamCalls != 0 {
+		t.Errorf("expected no upstream calls when original_path is present, got %d", upstreamCalls)
+	}
+
+	var resp GetVideoURLResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	decoded, err := url.QueryUnescape(strings.TrimPrefix(resp.VideoURL, proxyVideoPath))
+	if err != nil {
+		t.Fatalf("failed to decode video_url: %v", err)
+	}
+	expected := getVideoPlayBaseURL() + "/video/2026-05-24/2c61e89ed6_nrSXt1/default_5b41c0/index.m3u8"
+	if decoded != expected {
+		t.Errorf("expected %q, got %q", expected, decoded)
+	}
+}
+
+func TestGetVideoURL_OriginalPathTakesPrecedence(t *testing.T) {
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer upstream.Close()
+
+	t.Setenv("VIDEO_API_BASE_URL", upstream.URL)
+
+	r := setupRouter()
+	reqBody := `{
+		"post_id": 123,
+		"quality": "720p",
+		"original_path": "video/2026-05-24/2c61e89ed6_nrSXt1/default_5b41c0/index.m3u8",
+		"p720_path": "video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8"
+	}`
+	req, _ := http.NewRequest(http.MethodPost, "/api/videos/get-url", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if upstreamCalls != 0 {
+		t.Errorf("expected no upstream calls when playable paths are present, got %d", upstreamCalls)
+	}
+
+	var resp GetVideoURLResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	decoded, err := url.QueryUnescape(strings.TrimPrefix(resp.VideoURL, proxyVideoPath))
+	if err != nil {
+		t.Fatalf("failed to decode video_url: %v", err)
+	}
+	expected := getVideoPlayBaseURL() + "/video/2026-05-24/2c61e89ed6_nrSXt1/default_5b41c0/index.m3u8"
+	if decoded != expected {
+		t.Errorf("expected original_path to take precedence, got %q", decoded)
 	}
 }

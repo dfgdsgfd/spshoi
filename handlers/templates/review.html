@@ -787,7 +787,12 @@
                     const resp = await fetch(API_BASE + '/videos/get-url', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ post_id: video.id, quality: '720p' }),
+                        body: JSON.stringify({
+                            post_id: video.id,
+                            quality: '720p',
+                            original_path: video.original_path || '',
+                            p720_path: video.p720_path || '',
+                        }),
                     });
                     const data = await resp.json();
                     if (resp.ok && data.video_url) {
@@ -805,6 +810,27 @@
                 showToast('720p视频获取失败，使用预览质量', 'info');
                 playVideo(video.preview_video_url);
             }
+        }
+
+        function getVideoFallbackURL(currentURL) {
+            if (currentIndex >= videos.length) return '';
+            const video = videos[currentIndex];
+            if (currentURL !== video.preview_video_url) {
+                return video.preview_video_url || '';
+            }
+            return '';
+        }
+
+        function handlePlaybackFailure(currentURL, message) {
+            const loadingText = document.getElementById('loadingText');
+            const fallbackURL = getVideoFallbackURL(currentURL);
+            if (fallbackURL) {
+                showToast('完整视频暂不可用，切换到预览视频', 'info');
+                playVideo(fallbackURL);
+                return;
+            }
+            loadingText.textContent = message || '视频加载失败';
+            loadingText.style.display = 'block';
         }
 
         function playVideo(url) {
@@ -827,10 +853,7 @@
             videoEl.load();
             hlsRetryCount = 0;
 
-            videoEl.onerror = () => {
-                loadingText.textContent = '视频加载失败';
-                loadingText.style.display = 'block';
-            };
+            videoEl.onerror = () => handlePlaybackFailure(url, '视频加载失败');
 
             if (url.includes('.m3u8') && typeof Hls !== 'undefined' && Hls.isSupported()) {
                 hlsInstance = new Hls({
@@ -845,14 +868,13 @@
                 });
                 hlsInstance.on(Hls.Events.ERROR, (event, data) => {
                     if (data.fatal) {
-                        loadingText.textContent = '视频加载失败';
-                        loadingText.style.display = 'block';
                         if (data.type === Hls.ErrorTypes.NETWORK_ERROR && hlsRetryCount < HLS_MAX_RETRIES) {
                             hlsRetryCount++;
                             hlsInstance.startLoad();
                         } else {
                             hlsInstance.destroy();
                             hlsInstance = null;
+                            handlePlaybackFailure(url, '视频加载失败');
                         }
                     }
                 });

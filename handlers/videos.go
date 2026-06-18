@@ -73,8 +73,10 @@ type BatchToggleResponse struct {
 
 // GetVideoURLRequest represents the request for getting a full video URL
 type GetVideoURLRequest struct {
-	PostID  int    `json:"post_id" binding:"required" example:"11434"`
-	Quality string `json:"quality" example:"720p"`
+	PostID       int    `json:"post_id" binding:"required" example:"11434"`
+	Quality      string `json:"quality" example:"720p"`
+	P720Path     string `json:"p720_path" example:"video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8"`
+	OriginalPath string `json:"original_path" example:"video/2026-05-24/2c61e89ed6_nrSXt1/default_5b41c0/index.m3u8"`
 }
 
 // GetVideoURLResponse represents the response from the get-video-url API
@@ -106,6 +108,23 @@ func GetVideoURL(c *gin.Context) {
 
 	if req.Quality == "" {
 		req.Quality = "720p"
+	}
+
+	if videoURL := buildVideoURLFromPath(req.OriginalPath); videoURL != "" {
+		c.JSON(http.StatusOK, GetVideoURLResponse{
+			VideoURL: makeProxyURL(videoURL),
+			Quality:  req.Quality,
+			PostID:   req.PostID,
+		})
+		return
+	}
+	if videoURL := buildVideoURLFromPath(req.P720Path); videoURL != "" {
+		c.JSON(http.StatusOK, GetVideoURLResponse{
+			VideoURL: makeProxyURL(videoURL),
+			Quality:  req.Quality,
+			PostID:   req.PostID,
+		})
+		return
 	}
 
 	payload, _ := json.Marshal(map[string]interface{}{
@@ -231,6 +250,9 @@ func enrichWithVideoURLs(ctx context.Context, body []byte) []byte {
 		}
 		postID, ok := postMap["id"].(float64) // JSON numbers are float64
 		if !ok {
+			continue
+		}
+		if buildVideoURLFromPost(postMap) != "" {
 			continue
 		}
 
