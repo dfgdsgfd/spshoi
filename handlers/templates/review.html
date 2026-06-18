@@ -199,6 +199,25 @@
             min-width: auto;
         }
         .btn-mark:hover:not(:disabled) { background: #7d3c98; }
+        .filter-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: 12px;
+            font-size: 13px;
+            color: #aaa;
+            cursor: pointer;
+            user-select: none;
+        }
+        .filter-toggle input[type="checkbox"] {
+            accent-color: #e94560;
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+        .filter-toggle.active {
+            color: #e94560;
+        }
         .search-bar input {
             padding: 8px 12px;
             border: 1px solid #0f3460;
@@ -319,6 +338,61 @@
             padding: 24px 12px;
         }
 
+        .password-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.85);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        .password-dialog {
+            background: #16213e;
+            border: 1px solid #0f3460;
+            border-radius: 12px;
+            padding: 32px;
+            text-align: center;
+            min-width: 320px;
+        }
+        .password-dialog h2 {
+            color: #e94560;
+            margin-bottom: 16px;
+            font-size: 20px;
+        }
+        .password-dialog input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid #0f3460;
+            border-radius: 8px;
+            background: #1a1a2e;
+            color: #eee;
+            font-size: 16px;
+            outline: none;
+            margin-bottom: 16px;
+        }
+        .password-dialog input:focus {
+            border-color: #e94560;
+        }
+        .password-dialog .btn-login {
+            background: #e94560;
+            color: #fff;
+            padding: 12px 32px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+        }
+        .password-dialog .btn-login:hover { background: #c0392b; }
+        .password-dialog .error-msg {
+            color: #e74c3c;
+            font-size: 14px;
+            margin-top: 8px;
+            display: none;
+        }
+
         /* Mobile responsive */
         @media (max-width: 960px) {
             .content-layout {
@@ -390,6 +464,16 @@
     </style>
 </head>
 <body>
+    <div class="password-overlay" id="passwordOverlay" style="display:none">
+        <div class="password-dialog">
+            <h2>🔒 操作验证</h2>
+            <p style="color:#999;margin-bottom:16px;">请输入操作密码</p>
+            <input type="password" id="passwordInput" placeholder="请输入密码..." />
+            <button class="btn-login" onclick="submitPassword()">确认</button>
+            <button class="btn-login" style="background:#7f8c8d;margin-top:8px;" onclick="cancelPassword()">取消</button>
+            <div class="error-msg" id="passwordError">密码错误，请重试</div>
+        </div>
+    </div>
     <div class="header">
         <h1>📹 视频审核</h1>
         <div class="search-bar">
@@ -401,6 +485,10 @@
             已审核: <span id="reviewedCount">0</span> 个 |
             当前页: <span id="currentPage">-</span> |
             总数: <span id="totalCount">-</span>
+            <label class="filter-toggle" id="filterToggleLabel">
+                <input type="checkbox" id="filterDisabled" onchange="toggleDisabledFilter()" />
+                只显示被屏蔽视频
+            </label>
             <button class="btn btn-clear" onclick="clearReviewed()">清除审核记录</button>
         </div>
     </div>
@@ -463,8 +551,13 @@
 
     <script>
         const API_BASE = window.location.origin + '/api';
+        const REVIEW_PASSWORD = 'Xiner#4351';
 
+        let isAuthenticated = false;
+        let pendingAction = null;
         let videos = [];
+        let allVideos = []; // unfiltered list from API
+        let showDisabledOnly = false;
         let currentIndex = 0;
         let currentPage = 1;
         let totalPages = 1;
@@ -474,6 +567,46 @@
         const HLS_MAX_RETRIES = 3;
         let reviewedIds = [];
         let searchKeyword = '';
+
+        // Password verification - only prompt if not yet authenticated
+        function requirePassword(action) {
+            if (isAuthenticated) {
+                action();
+                return;
+            }
+            pendingAction = action;
+            document.getElementById('passwordError').style.display = 'none';
+            document.getElementById('passwordInput').value = '';
+            document.getElementById('passwordOverlay').style.display = 'flex';
+            document.getElementById('passwordInput').focus();
+        }
+
+        function submitPassword() {
+            const input = document.getElementById('passwordInput').value;
+            if (input === REVIEW_PASSWORD) {
+                isAuthenticated = true;
+                document.getElementById('passwordOverlay').style.display = 'none';
+                if (pendingAction) {
+                    pendingAction();
+                    pendingAction = null;
+                }
+            } else {
+                document.getElementById('passwordError').style.display = 'block';
+                document.getElementById('passwordInput').value = '';
+                document.getElementById('passwordInput').focus();
+            }
+        }
+
+        function cancelPassword() {
+            document.getElementById('passwordOverlay').style.display = 'none';
+            pendingAction = null;
+        }
+
+        // Allow Enter key on password input
+        document.getElementById('passwordInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') submitPassword();
+            if (e.key === 'Escape') cancelPassword();
+        });
 
         function isReviewed(video) {
             return reviewedIds.includes(video.id);
@@ -524,6 +657,14 @@
                 const badge = document.createElement('span');
                 badge.className = 'playlist-badge ' + (isReviewed(video) ? 'reviewed' : 'pending');
                 badge.textContent = isReviewed(video) ? '已审核' : '待审核';
+
+                if (isVideoDisabled(video)) {
+                    const disabledBadge = document.createElement('span');
+                    disabledBadge.className = 'playlist-badge';
+                    disabledBadge.style.background = '#e94560';
+                    disabledBadge.textContent = '已屏蔽';
+                    meta.appendChild(disabledBadge);
+                }
 
                 meta.appendChild(idText);
                 meta.appendChild(badge);
@@ -604,21 +745,23 @@
         }
 
         async function clearReviewed() {
-            if (confirm('确定清除所有审核记录？清除后已审核的视频将重新显示。')) {
-                try {
-                    const resp = await fetch(API_BASE + '/review/state', { method: 'DELETE' });
-                    const data = await resp.json();
-                    reviewedIds = data.reviewed_ids || [];
-                } catch {
-                    reviewedIds = [];
+            requirePassword(async () => {
+                if (confirm('确定清除所有审核记录？清除后已审核的视频将重新显示。')) {
+                    try {
+                        const resp = await fetch(API_BASE + '/review/state', { method: 'DELETE' });
+                        const data = await resp.json();
+                        reviewedIds = data.reviewed_ids || [];
+                    } catch {
+                        reviewedIds = [];
+                    }
+                    await resetServerPageNumber();
+                    currentPage = 1;
+                    currentIndex = 0;
+                    updateStats();
+                    showToast('审核记录已清除', 'info');
+                    loadVideos();
                 }
-                await resetServerPageNumber();
-                currentPage = 1;
-                currentIndex = 0;
-                updateStats();
-                showToast('审核记录已清除', 'info');
-                loadVideos();
-            }
+            });
         }
 
         function updateStats() {
@@ -658,7 +801,7 @@
             try {
                 const url = new URL(API_BASE + '/videos', window.location.origin);
                 url.searchParams.set('page', currentPage);
-                url.searchParams.set('per_page', '20');
+                url.searchParams.set('per_page', '24');
                 url.searchParams.set('order', 'DESC');
                 if (searchKeyword) {
                     url.searchParams.set('search', searchKeyword);
@@ -672,7 +815,8 @@
                 const data = await resp.json();
                 totalPages = data.total_pages || 1;
                 totalCount = data.total_posts || data.total || 0;
-                videos = Array.isArray(data.posts) ? data.posts : [];
+                allVideos = Array.isArray(data.posts) ? data.posts : [];
+                videos = applyDisabledFilter(allVideos);
 
                 await savePageNumberToServer(currentPage);
 
@@ -692,6 +836,9 @@
                     currentIndex = Math.max(0, Math.min(preferredIndex, videos.length - 1));
                 } else if (preferLast) {
                     currentIndex = videos.length - 1;
+                } else if (showDisabledOnly) {
+                    // When filtering blocked videos, show all of them regardless of review status
+                    currentIndex = 0;
                 } else {
                     const nextPendingIndex = findNextPendingIndex(0);
                     if (nextPendingIndex === -1) {
@@ -904,6 +1051,22 @@
         }
 
         async function moveToNextPendingVideo() {
+            if (showDisabledOnly) {
+                // When filtering blocked videos, just move to next video in the list
+                if (currentIndex + 1 < videos.length) {
+                    currentIndex++;
+                    displayCurrentVideo();
+                } else if (currentPage < totalPages) {
+                    currentPage++;
+                    loadVideos();
+                } else {
+                    renderVideoList();
+                    showEmptyState();
+                    updateStats();
+                }
+                return;
+            }
+
             const nextPendingIndex = findNextPendingIndex(currentIndex + 1);
             if (nextPendingIndex !== -1) {
                 currentIndex = nextPendingIndex;
@@ -924,38 +1087,42 @@
 
         async function approveVideo() {
             if (currentIndex >= videos.length) return;
-            const video = videos[currentIndex];
-            await addReviewedId(video.id);
-            showToast('已通过: ' + video.title, 'success');
-            moveToNextPendingVideo();
+            requirePassword(async () => {
+                const video = videos[currentIndex];
+                await addReviewedId(video.id);
+                showToast('已通过: ' + video.title, 'success');
+                moveToNextPendingVideo();
+            });
         }
 
         async function rejectVideo() {
             if (currentIndex >= videos.length) return;
-            const video = videos[currentIndex];
-            setButtonsEnabled(false);
+            requirePassword(async () => {
+                const video = videos[currentIndex];
+                setButtonsEnabled(false);
 
-            try {
-                const resp = await fetch(API_BASE + '/videos/batch-disable', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ post_ids: [video.id] }),
-                });
-                const data = await resp.json();
-                if (resp.ok && data.disabled > 0) {
-                    await addReviewedId(video.id);
-                    showToast(`已拒绝并禁用: ${video.title}`, 'error');
-                } else {
-                    await addReviewedId(video.id);
-                    showToast(`拒绝操作已记录 (上游: ${data.results?.[0]?.message || 'unknown'})`, 'info');
+                try {
+                    const resp = await fetch(API_BASE + '/videos/batch-disable', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ post_ids: [video.id] }),
+                    });
+                    const data = await resp.json();
+                    if (resp.ok && data.disabled > 0) {
+                        await addReviewedId(video.id);
+                        showToast(`已拒绝并禁用: ${video.title}`, 'error');
+                    } else {
+                        await addReviewedId(video.id);
+                        showToast(`拒绝操作已记录 (上游: ${data.results?.[0]?.message || 'unknown'})`, 'info');
+                    }
+                } catch (err) {
+                    showToast(`禁用请求失败: ${err.message}`, 'error');
+                    setButtonsEnabled(true);
+                    return;
                 }
-            } catch (err) {
-                showToast(`禁用请求失败: ${err.message}`, 'error');
-                setButtonsEnabled(true);
-                return;
-            }
 
-            moveToNextPendingVideo();
+                moveToNextPendingVideo();
+            });
         }
 
         function nextVideo() {
@@ -1037,6 +1204,35 @@
             currentIndex = 0;
             document.getElementById('btnClearSearch').style.display = 'none';
             loadVideos();
+        }
+
+        function isVideoDisabled(video) {
+            return video.enable === false || video.enable === 0;
+        }
+
+        function applyDisabledFilter(list) {
+            if (!showDisabledOnly) return list;
+            return list.filter(v => isVideoDisabled(v));
+        }
+
+        function toggleDisabledFilter() {
+            showDisabledOnly = document.getElementById('filterDisabled').checked;
+            const label = document.getElementById('filterToggleLabel');
+            if (showDisabledOnly) {
+                label.classList.add('active');
+            } else {
+                label.classList.remove('active');
+            }
+            // Re-apply filter on current data
+            videos = applyDisabledFilter(allVideos);
+            currentIndex = 0;
+            renderVideoList();
+            if (videos.length) {
+                displayCurrentVideo();
+            } else {
+                showEmptyState();
+            }
+            updateStats();
         }
 
         // Init: restore remembered page state from the server, load reviewed IDs, then resume review

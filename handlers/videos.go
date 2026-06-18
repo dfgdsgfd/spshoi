@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	defaultBaseURL = "https://v.yuelk.com"
-	defaultAPIKey  = "ef13c2bdf8cd8550ed4c37c323a558c9985d6d928d39a3b53bed864460221d56"
+	defaultBaseURL  = "https://v2.yuelk.com"
+	defaultAPIKey   = "ef13c2bdf8cd8550ed4c37c323a558c9985d6d928d39a3b53bed864460221d56"
 )
 
 func getBaseURL() string {
@@ -34,6 +34,10 @@ func getAPIKey() string {
 		return v
 	}
 	return defaultAPIKey
+}
+
+func getSessionCookie() string {
+	return os.Getenv("VIDEO_SESSION_COOKIE")
 }
 
 // VideoListResponse represents the response from the video list API
@@ -224,6 +228,83 @@ func fetchVideoURL(ctx context.Context, postID int, quality string) string {
 	return ""
 }
 
+// transformV2Response converts the v2 upstream API response into the flat
+// format expected by the frontend and the rest of the pipeline (enrichment,
+// URL rewriting). The v2 envelope looks like:
+//
+//	{ "data": { "videos": [...] }, "count": { "videos": N }, ... }
+//
+// We transform it into:
+//
+//	{ "posts": [...], "total_posts": N, "total_pages": P, "page": X }
+//
+// Each video object is also normalised: post_id → id, first_image_path →
+// first_image (full URL), preview_path → preview_video_url (full URL).
+func transformV2Response(body []byte, page, perPage int) []byte {
+	var envelope map[string]interface{}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return body
+	}
+
+	// Detect v2 envelope by the presence of "data.videos".
+	dataObj, _ := envelope["data"].(map[string]interface{})
+	if dataObj == nil {
+		return body // not a v2 response – pass through
+	}
+	videos, ok := dataObj["videos"].([]interface{})
+	if !ok {
+		return body
+	}
+
+	// Total count lives in count.videos
+	totalCount := 0
+	if countObj, ok := envelope["count"].(map[string]interface{}); ok {
+		if v, ok := countObj["videos"].(float64); ok {
+			totalCount = int(v)
+		}
+	}
+
+	totalPages := 1
+	if perPage > 0 && totalCount > 0 {
+		totalPages = (totalCount + perPage - 1) / perPage
+	}
+
+	playBase := getVideoPlayBaseURL()
+
+	// Normalise each video object
+	for _, v := range videos {
+		vm, ok := v.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		// post_id → id (keep post_id too for backward compat)
+		if pid, ok := vm["post_id"].(float64); ok {
+			vm["id"] = pid
+		}
+		// Build full preview_video_url from preview_path
+		if pp, ok := vm["preview_path"].(string); ok && pp != "" {
+			vm["preview_video_url"] = playBase + "/" + pp
+		}
+		// Build full first_image URL from first_image_path
+		if fip, ok := vm["first_image_path"].(string); ok && fip != "" {
+			vm["first_image"] = fmt.Sprintf("%s/pima/wp-content/uploads/%s", getBaseURL(), fip)
+		}
+	}
+
+	result := map[string]interface{}{
+		"posts":       videos,
+		"total_posts": totalCount,
+		"total_pages": totalPages,
+		"page":        page,
+	}
+
+	out, err := json.Marshal(result)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
 // enrichWithVideoURLs fetches 720p video URLs for each post in the upstream
 // response and adds them as "video_url" fields. The fetches run in parallel
 // with a bounded timeout so the video list response is not overly delayed.
@@ -334,7 +415,7 @@ func GetVideos(c *gin.Context) {
 		order = "DESC"
 	}
 
-	url := fmt.Sprintf("%s/pyvideo2/api/get_posts?page=%d&per_page=%d&sort_order=%s",
+	url := fmt.Sprintf("%s/pyvideo2/api/videos/manage?page=%d&limit=%d&sort_by=created_at&sort_order=%s",
 		getBaseURL(), page, perPage, order)
 	if search != "" {
 		url += "&search=" + url_pkg.QueryEscape(search)
@@ -349,6 +430,14 @@ func GetVideos(c *gin.Context) {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-API-KEY", getAPIKey())
 
+	// The /pyvideo2/api/videos/manage endpoint requires session cookie authentication
+	if sessionCookie := getSessionCookie(); sessionCookie != "" {
+		req.AddCookie(&http.Cookie{
+			Name:  "pyvideo2_session",
+			Value: sessionCookie,
+		})
+	}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, ErrorResponse{Error: "failed to fetch data from upstream"})
@@ -362,8 +451,11 @@ func GetVideos(c *gin.Context) {
 		return
 	}
 
+	// Transform v2 response envelope into the flat format expected downstream
+	transformed := transformV2Response(body, page, perPage)
+
 	// Enrich posts with 720p video URLs fetched in parallel from upstream
-	enriched := enrichWithVideoURLs(c.Request.Context(), body)
+	enriched := enrichWithVideoURLs(c.Request.Context(), transformed)
 
 	// Rewrite video URLs to go through our proxy so browsers can access them
 	rewritten := rewriteVideoURLs(enriched)

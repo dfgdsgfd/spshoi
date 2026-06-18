@@ -35,7 +35,7 @@ func TestIsAllowedProxyHost(t *testing.T) {
 	}{
 		{"https://edgecdn2-tc.yuelk.com:30086/video/index.m3u8", true},
 		{"https://v.yuelk.com/pima/image.webp", true},
-		{"http://192.168.80.101:7896/video/index.m3u8", true},
+		{"https://spcs.yuelk.com:29443/video/index.m3u8", true},
 		{"https://evil.com/hack", false},
 		{"https://example.com/test", false},
 		{"not-a-url", false},
@@ -104,7 +104,7 @@ seg-0.ts`
 }
 
 func TestRewriteM3U8_WithEncryptionKey(t *testing.T) {
-	baseURL := "http://192.168.80.101:7896/wp-content/uploads/video/2026-02-04/72035dfd3e_RTmd7E/720p_c57bc6/index.m3u8"
+	baseURL := "https://spcs.yuelk.com:29443/wp-content/uploads/video/2026-02-04/72035dfd3e_RTmd7E/720p_c57bc6/index.m3u8"
 
 	input := `#EXTM3U
 #EXT-X-VERSION:3
