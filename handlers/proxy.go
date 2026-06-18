@@ -86,11 +86,11 @@ func replaceVideoHost(videoURL string) string {
 		for _, scheme := range []string{"https://", "http://"} {
 			prefix := scheme + cdnHost
 			if strings.HasPrefix(videoURL, prefix) {
-				return playBase + videoURL[len(prefix):]
+				return normalizeVideoURL(playBase + videoURL[len(prefix):])
 			}
 		}
 	}
-	return videoURL
+	return normalizeVideoURL(videoURL)
 }
 
 func buildVideoURLFromPath(videoPath string) string {
@@ -101,14 +101,71 @@ func buildVideoURLFromPath(videoPath string) string {
 
 	parsedURL, err := url.Parse(videoPath)
 	if err == nil && parsedURL.Scheme != "" && parsedURL.Host != "" {
-		return replaceVideoHost(videoPath)
+		return normalizeVideoURL(replaceVideoHost(videoPath))
 	}
 
-	return getVideoPlayBaseURL() + "/" + strings.TrimLeft(videoPath, "/")
+	parsedPath, err := url.Parse(videoPath)
+	if err != nil {
+		return getVideoPlayBaseURL() + normalizeVideoUploadPath(videoPath)
+	}
+	parsedPath.Path = normalizeVideoUploadPath(parsedPath.Path)
+	return getVideoPlayBaseURL() + parsedPath.String()
+}
+
+func normalizeVideoURL(videoURL string) string {
+	parsedURL, err := url.Parse(videoURL)
+	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
+		return videoURL
+	}
+
+	playBase, err := url.Parse(getVideoPlayBaseURL())
+	if err != nil || playBase.Host == "" || parsedURL.Host != playBase.Host {
+		return videoURL
+	}
+
+	parsedURL.Path = normalizeVideoUploadPath(parsedURL.Path)
+	return parsedURL.String()
+}
+
+func normalizeVideoUploadPath(videoPath string) string {
+	videoPath = strings.TrimSpace(videoPath)
+	if videoPath == "" {
+		return ""
+	}
+
+	normalized := "/" + strings.TrimLeft(videoPath, "/")
+	if strings.HasPrefix(normalized, "/video/") {
+		normalized = "/wp-content/uploads" + normalized
+	}
+
+	if strings.HasSuffix(normalized, "/") {
+		return normalized + "index.m3u8"
+	}
+
+	lastSlash := strings.LastIndex(normalized, "/")
+	lastSegment := normalized[lastSlash+1:]
+	if !strings.Contains(lastSegment, ".") {
+		return normalized + "/index.m3u8"
+	}
+
+	return normalized
+}
+
+func videoPathPreference(quality string) []string {
+	switch strings.ToLower(strings.TrimSpace(quality)) {
+	case "original", "default":
+		return []string{"original_path", "p720_path"}
+	default:
+		return []string{"p720_path", "original_path"}
+	}
 }
 
 func buildVideoURLFromPost(postMap map[string]interface{}) string {
-	for _, key := range []string{"original_path", "p720_path"} {
+	return buildVideoURLFromPostQuality(postMap, "720p")
+}
+
+func buildVideoURLFromPostQuality(postMap map[string]interface{}, quality string) string {
+	for _, key := range videoPathPreference(quality) {
 		if videoURL := buildVideoURLFromPath(stringField(postMap, key)); videoURL != "" {
 			return videoURL
 		}

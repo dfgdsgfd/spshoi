@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	defaultBaseURL  = "https://v2.yuelk.com"
-	defaultAPIKey   = "ef13c2bdf8cd8550ed4c37c323a558c9985d6d928d39a3b53bed864460221d56"
+	defaultBaseURL = "https://v2.yuelk.com"
+	defaultAPIKey  = "ef13c2bdf8cd8550ed4c37c323a558c9985d6d928d39a3b53bed864460221d56"
 )
 
 func getBaseURL() string {
@@ -114,21 +114,19 @@ func GetVideoURL(c *gin.Context) {
 		req.Quality = "720p"
 	}
 
-	if videoURL := buildVideoURLFromPath(req.OriginalPath); videoURL != "" {
-		c.JSON(http.StatusOK, GetVideoURLResponse{
-			VideoURL: makeProxyURL(videoURL),
-			Quality:  req.Quality,
-			PostID:   req.PostID,
-		})
-		return
+	pathValues := map[string]string{
+		"original_path": req.OriginalPath,
+		"p720_path":     req.P720Path,
 	}
-	if videoURL := buildVideoURLFromPath(req.P720Path); videoURL != "" {
-		c.JSON(http.StatusOK, GetVideoURLResponse{
-			VideoURL: makeProxyURL(videoURL),
-			Quality:  req.Quality,
-			PostID:   req.PostID,
-		})
-		return
+	for _, key := range videoPathPreference(req.Quality) {
+		if videoURL := buildVideoURLFromPath(pathValues[key]); videoURL != "" {
+			c.JSON(http.StatusOK, GetVideoURLResponse{
+				VideoURL: makeProxyURL(videoURL),
+				Quality:  req.Quality,
+				PostID:   req.PostID,
+			})
+			return
+		}
 	}
 
 	payload, _ := json.Marshal(map[string]interface{}{

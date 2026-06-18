@@ -311,7 +311,7 @@ func TestRewriteVideoURLs_WithP720Path(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to decode video_url: %v", err)
 	}
-	expected := getVideoPlayBaseURL() + "/video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8"
+	expected := getVideoPlayBaseURL() + "/wp-content/uploads/video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8"
 	if decoded != expected {
 		t.Errorf("expected p720_path-derived URL %q, got %q", expected, decoded)
 	}
@@ -347,13 +347,13 @@ func TestRewriteVideoURLs_WithOriginalPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to decode video_url: %v", err)
 	}
-	expected := getVideoPlayBaseURL() + "/video/2026-05-24/2c61e89ed6_nrSXt1/default_5b41c0/index.m3u8"
+	expected := getVideoPlayBaseURL() + "/wp-content/uploads/video/2026-05-24/2c61e89ed6_nrSXt1/default_5b41c0/index.m3u8"
 	if decoded != expected {
 		t.Errorf("expected original_path-derived URL %q, got %q", expected, decoded)
 	}
 }
 
-func TestRewriteVideoURLs_OriginalPathTakesPrecedence(t *testing.T) {
+func TestRewriteVideoURLs_P720PathTakesPrecedenceByDefault(t *testing.T) {
 	input := `{
 		"posts": [
 			{
@@ -376,9 +376,9 @@ func TestRewriteVideoURLs_OriginalPathTakesPrecedence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to decode video_url: %v", err)
 	}
-	expected := getVideoPlayBaseURL() + "/video/2026-05-24/2c61e89ed6_nrSXt1/default_5b41c0/index.m3u8"
+	expected := getVideoPlayBaseURL() + "/wp-content/uploads/video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8"
 	if decoded != expected {
-		t.Errorf("expected original_path to take precedence, got %q", decoded)
+		t.Errorf("expected 720p path to take precedence by default, got %q", decoded)
 	}
 }
 
@@ -455,6 +455,11 @@ func TestReplaceVideoHost(t *testing.T) {
 			expected: "https://example.com/video.m3u8",
 		},
 		{
+			name:     "play base video path normalized to uploads",
+			input:    getVideoPlayBaseURL() + "/video/2025-11-15/86b0b561df_qNtdk7/default_1c62e1/index.m3u8",
+			expected: getVideoPlayBaseURL() + "/wp-content/uploads/video/2025-11-15/86b0b561df_qNtdk7/default_1c62e1/index.m3u8",
+		},
+		{
 			name:     "empty string",
 			input:    "",
 			expected: "",
@@ -480,17 +485,27 @@ func TestBuildVideoURLFromPath(t *testing.T) {
 		{
 			name:     "relative p720 path",
 			input:    "video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8",
-			expected: getVideoPlayBaseURL() + "/video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8",
+			expected: getVideoPlayBaseURL() + "/wp-content/uploads/video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8",
 		},
 		{
 			name:     "relative p720 path with leading slash",
 			input:    "/video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8",
-			expected: getVideoPlayBaseURL() + "/video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8",
+			expected: getVideoPlayBaseURL() + "/wp-content/uploads/video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8",
 		},
 		{
 			name:     "absolute CDN URL",
 			input:    "https://edgecdn2-tc.yuelk.com:30086/video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8",
-			expected: getVideoPlayBaseURL() + "/video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8",
+			expected: getVideoPlayBaseURL() + "/wp-content/uploads/video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8",
+		},
+		{
+			name:     "uploads directory gets index m3u8",
+			input:    "https://spcs.yuelk.com:29443/wp-content/uploads/video/2025-11-13/01647266bb_pm3o44/720p_f86522/",
+			expected: getVideoPlayBaseURL() + "/wp-content/uploads/video/2025-11-13/01647266bb_pm3o44/720p_f86522/index.m3u8",
+		},
+		{
+			name:     "relative p720 directory gets uploads prefix and index m3u8",
+			input:    "video/2025-11-13/01647266bb_pm3o44/720p_f86522/",
+			expected: getVideoPlayBaseURL() + "/wp-content/uploads/video/2025-11-13/01647266bb_pm3o44/720p_f86522/index.m3u8",
 		},
 		{
 			name:     "empty string",
@@ -629,7 +644,7 @@ func TestGetVideoURL_WithP720Path(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to decode video_url: %v", err)
 	}
-	expected := getVideoPlayBaseURL() + "/video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8"
+	expected := getVideoPlayBaseURL() + "/wp-content/uploads/video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8"
 	if decoded != expected {
 		t.Errorf("expected %q, got %q", expected, decoded)
 	}
@@ -671,13 +686,13 @@ func TestGetVideoURL_WithOriginalPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to decode video_url: %v", err)
 	}
-	expected := getVideoPlayBaseURL() + "/video/2026-05-24/2c61e89ed6_nrSXt1/default_5b41c0/index.m3u8"
+	expected := getVideoPlayBaseURL() + "/wp-content/uploads/video/2026-05-24/2c61e89ed6_nrSXt1/default_5b41c0/index.m3u8"
 	if decoded != expected {
 		t.Errorf("expected %q, got %q", expected, decoded)
 	}
 }
 
-func TestGetVideoURL_OriginalPathTakesPrecedence(t *testing.T) {
+func TestGetVideoURL_P720PathTakesPrecedenceFor720pQuality(t *testing.T) {
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalls++
@@ -714,8 +729,8 @@ func TestGetVideoURL_OriginalPathTakesPrecedence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to decode video_url: %v", err)
 	}
-	expected := getVideoPlayBaseURL() + "/video/2026-05-24/2c61e89ed6_nrSXt1/default_5b41c0/index.m3u8"
+	expected := getVideoPlayBaseURL() + "/wp-content/uploads/video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8"
 	if decoded != expected {
-		t.Errorf("expected original_path to take precedence, got %q", decoded)
+		t.Errorf("expected 720p path to take precedence for 720p quality, got %q", decoded)
 	}
 }
