@@ -162,7 +162,6 @@ func TestReviewState_Statuses(t *testing.T) {
 	for _, body := range []string{
 		`{"post_id": 123, "status": "approved"}`,
 		`{"post_id": 456, "status": "rejected"}`,
-		`{"post_id": 789, "status": "recheck"}`,
 	} {
 		req, _ := http.NewRequest(http.MethodPost, "/api/review/state", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -181,11 +180,11 @@ func TestReviewState_Statuses(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &state); err != nil {
 		t.Fatalf("failed to parse response: %v", err)
 	}
-	if state.Statuses[123] != reviewStatusApproved || state.Statuses[456] != reviewStatusRejected || state.Statuses[789] != reviewStatusRecheck {
+	if state.Statuses[123] != reviewStatusApproved || state.Statuses[456] != reviewStatusRejected {
 		t.Errorf("unexpected statuses: %v", state.Statuses)
 	}
 	if len(state.ReviewedIDs) != 2 {
-		t.Errorf("recheck should not be counted as completed, got %v", state.ReviewedIDs)
+		t.Errorf("expected two completed reviews, got %v", state.ReviewedIDs)
 	}
 
 	req, _ = http.NewRequest(http.MethodPost, "/api/review/state", strings.NewReader(`{"post_id": 1, "status": "unknown"}`))
@@ -215,10 +214,42 @@ func TestReviewState_LegacyCompletedRecordRequiresRecheck(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &state); err != nil {
 		t.Fatalf("failed to parse response: %v", err)
 	}
-	if state.Statuses[123] != reviewStatusRecheck {
-		t.Errorf("legacy record should require recheck, got %q", state.Statuses[123])
+	if _, ok := state.Statuses[123]; ok {
+		t.Errorf("legacy record should not have a completed result, got %q", state.Statuses[123])
 	}
 	if len(state.ReviewedIDs) != 0 {
 		t.Errorf("legacy record without a result should not be completed, got %v", state.ReviewedIDs)
+	}
+}
+
+func TestReviewState_RecheckAllKeepsResults(t *testing.T) {
+	tmp := t.TempDir() + "/test_review_state.json"
+	os.Setenv("REVIEW_STATE_PATH", tmp)
+	defer os.Unsetenv("REVIEW_STATE_PATH")
+
+	r := setupRouter()
+	for _, body := range []string{
+		`{"post_id": 123, "status": "approved"}`,
+		`{"recheck_all": true}`,
+	} {
+		req, _ := http.NewRequest(http.MethodPost, "/api/review/state", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 for %s, got %d", body, w.Code)
+		}
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, "/api/review/state", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	var state ReviewState
+	if err := json.Unmarshal(w.Body.Bytes(), &state); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if !state.RecheckAll || state.Statuses[123] != reviewStatusApproved || len(state.ReviewedIDs) != 1 {
+		t.Errorf("recheck mode should preserve results, got %#v", state)
 	}
 }

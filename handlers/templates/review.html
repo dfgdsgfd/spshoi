@@ -85,23 +85,6 @@
             font-size: 13px;
         }
         .review-status-hint { color: #888; }
-        .audit-toggle {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            color: #fff;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            user-select: none;
-            white-space: nowrap;
-        }
-        .audit-toggle input {
-            width: 18px;
-            height: 18px;
-            accent-color: #27ae60;
-            cursor: pointer;
-        }
         .player-wrapper {
             width: 100%;
             max-width: 960px;
@@ -543,6 +526,10 @@
                 <input type="checkbox" id="filterDisabled" onchange="toggleDisabledFilter()" />
                 只显示被屏蔽视频
             </label>
+            <label class="filter-toggle" id="recheckAllLabel">
+                <input type="checkbox" id="recheckAll" onchange="toggleRecheckAll()" />
+                所有视频进入复审（保留原结果）
+            </label>
             <button class="btn btn-clear" onclick="clearReviewed()">清除审核记录</button>
         </div>
     </div>
@@ -587,12 +574,8 @@
                 <div class="review-status-bar">
                     <div class="review-status-copy">
                         <span>审核状态</span>
-                        <span id="reviewStatusHint" class="review-status-hint">通过或拒绝后会自动勾选并标注结果。</span>
+                        <span id="reviewStatusHint" class="review-status-hint">通过或拒绝后会立即保存并显示结果。</span>
                     </div>
-                    <label class="audit-toggle" for="reviewCheckbox">
-                        <input type="checkbox" id="reviewCheckbox" onchange="toggleCurrentReview()" />
-                        已完成审核（需标注结果）
-                    </label>
                 </div>
 
                 <div class="controls">
@@ -636,6 +619,7 @@
         const HLS_MAX_RETRIES = 3;
         let reviewedIds = [];
         let reviewStatuses = {};
+        let recheckAll = false;
         let searchKeyword = '';
 
         // Password verification - only prompt if not yet authenticated
@@ -682,29 +666,42 @@
             if (e.key === 'Escape') cancelPassword();
         });
 
+        function getStoredReviewResult(video) {
+            const status = reviewStatuses[String(video.id)];
+            return status === 'approved' || status === 'rejected' ? status : null;
+        }
+
         function getReviewStatus(video) {
-            const status = reviewStatuses[String(video.id)] || 'recheck';
-            return status === 'reviewed' ? 'recheck' : status;
+            const result = getStoredReviewResult(video);
+            return recheckAll || !result ? 'recheck' : result;
         }
 
         function isReviewed(video) {
             return getReviewStatus(video) !== 'recheck';
         }
 
-        function getReviewStatusLabel(status) {
-            return {
-                recheck: '复审',
-                approved: '已通过',
-                rejected: '已拒绝',
-            }[status] || '复审';
+        function getReviewStatusLabel(video) {
+            const status = getReviewStatus(video);
+            const originalResult = getStoredReviewResult(video);
+            if (status === 'recheck') {
+                if (recheckAll && originalResult) {
+                    return `复审（原审核：${originalResult === 'approved' ? '同意' : '拒绝'}）`;
+                }
+                return '复审';
+            }
+            return status === 'approved' ? '已同意' : '已拒绝';
         }
 
-        function getReviewStatusHint(status) {
-            return {
-                recheck: '未勾选，保留在复审状态。',
-                approved: '已通过，审核结果已保存。',
-                rejected: '已拒绝，视频已提交屏蔽。',
-            }[status] || '未勾选，保留在复审状态。';
+        function getReviewStatusHint(video) {
+            const status = getReviewStatus(video);
+            const originalResult = getStoredReviewResult(video);
+            if (status === 'recheck') {
+                if (recheckAll && originalResult) {
+                    return `复审中，原审核结果为“${originalResult === 'approved' ? '同意' : '拒绝'}”，结果已保留。`;
+                }
+                return '尚未标注同意或拒绝，处于复审状态。';
+            }
+            return status === 'approved' ? '已同意，审核结果已保存。' : '已拒绝，视频已提交屏蔽。';
         }
 
         function findNextPendingIndex(startIndex) {
@@ -752,7 +749,7 @@
 
                 const badge = document.createElement('span');
                 badge.className = 'playlist-badge ' + status;
-                badge.textContent = getReviewStatusLabel(status);
+                badge.textContent = getReviewStatusLabel(video);
 
                 if (isVideoDisabled(video)) {
                     const disabledBadge = document.createElement('span');
@@ -803,23 +800,20 @@
                 } else {
                     reviewedIds = [];
                     reviewStatuses = {};
+                    recheckAll = false;
                 }
             } catch {
                 reviewedIds = [];
                 reviewStatuses = {};
+                recheckAll = false;
             }
         }
 
         function applyReviewState(data) {
             reviewedIds = data.reviewed_ids || [];
             reviewStatuses = data.statuses || {};
-            // Older servers only return reviewed_ids. Without a pass/reject
-            // result they need recheck, rather than a generic completed state.
-            reviewedIds.forEach(id => {
-                if (!reviewStatuses[String(id)]) {
-                    reviewStatuses[String(id)] = 'recheck';
-                }
-            });
+            recheckAll = Boolean(data.recheck_all);
+            updateRecheckAllControl();
         }
 
         function getReviewedIds() {
@@ -847,6 +841,49 @@
                 updateCurrentReviewStatus();
                 return false;
             }
+        }
+
+        async function setRecheckAll(enabled) {
+            try {
+                const resp = await fetch(API_BASE + '/review/state', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ recheck_all: enabled }),
+                });
+                const data = await resp.json();
+                if (!resp.ok) {
+                    throw new Error(data.error || '复审状态保存失败');
+                }
+                applyReviewState(data);
+                updateStats();
+                renderVideoList();
+                updateCurrentReviewStatus();
+                return true;
+            } catch (err) {
+                showToast('复审状态保存失败: ' + err.message, 'error');
+                updateRecheckAllControl();
+                return false;
+            }
+        }
+
+        function updateRecheckAllControl() {
+            const checkbox = document.getElementById('recheckAll');
+            const label = document.getElementById('recheckAllLabel');
+            checkbox.checked = recheckAll;
+            label.classList.toggle('active', recheckAll);
+        }
+
+        function toggleRecheckAll() {
+            const checkbox = document.getElementById('recheckAll');
+            const requested = checkbox.checked;
+            requirePassword(async () => {
+                checkbox.disabled = true;
+                const saved = await setRecheckAll(requested);
+                checkbox.disabled = false;
+                if (saved) {
+                    showToast(requested ? '所有视频已进入复审，原审核结果已保留' : '已退出全量复审模式', 'info');
+                }
+            }, updateRecheckAllControl);
         }
 
         async function clearReviewed() {

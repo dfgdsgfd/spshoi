@@ -25,12 +25,14 @@ const (
 type ReviewState struct {
 	ReviewedIDs []int          `json:"reviewed_ids"`
 	Statuses    map[int]string `json:"statuses"`
+	RecheckAll  bool           `json:"recheck_all"`
 }
 
 // ReviewStatusRequest updates one video's detailed review status.
 type ReviewStatusRequest struct {
-	PostID int    `json:"post_id" binding:"required" example:"12345"`
-	Status string `json:"status" enums:"approved,rejected,recheck" example:"approved"`
+	PostID     int   `json:"post_id" example:"12345"`
+	Status     string `json:"status" enums:"approved,rejected" example:"approved"`
+	RecheckAll *bool `json:"recheck_all"`
 }
 
 var reviewStateMu sync.Mutex
@@ -71,17 +73,12 @@ func normalizeReviewState(state *ReviewState) {
 		state.Statuses = map[int]string{}
 	}
 
-	// State files created before detailed statuses existed only contain
-	// ReviewedIDs. They have no pass/reject decision, so put them back into
-	// recheck instead of presenting a misleading generic completed state.
-	for _, id := range state.ReviewedIDs {
-		if _, ok := state.Statuses[id]; !ok {
-			state.Statuses[id] = reviewStatusRecheck
-		}
-	}
 	for id, status := range state.Statuses {
-		if status == legacyReviewStatusReviewed {
-			state.Statuses[id] = reviewStatusRecheck
+		if status == legacyReviewStatusReviewed || status == reviewStatusRecheck {
+			// Neither legacy "reviewed" nor the former per-video recheck value
+			// contains a pass/reject conclusion. Keep the video in recheck
+			// without retaining a misleading completed result.
+			delete(state.Statuses, id)
 		}
 	}
 
@@ -89,7 +86,7 @@ func normalizeReviewState(state *ReviewState) {
 	// list from statuses so it always agrees with the displayed count.
 	completed := make([]int, 0, len(state.Statuses))
 	for id, status := range state.Statuses {
-		if status != reviewStatusRecheck {
+		if status == reviewStatusApproved || status == reviewStatusRejected {
 			completed = append(completed, id)
 		}
 	}
@@ -98,7 +95,7 @@ func normalizeReviewState(state *ReviewState) {
 
 func isValidReviewStatus(status string) bool {
 	switch status {
-	case reviewStatusApproved, reviewStatusRejected, reviewStatusRecheck:
+	case reviewStatusApproved, reviewStatusRejected:
 		return true
 	default:
 		return false
@@ -135,7 +132,7 @@ func GetReviewState(c *gin.Context) {
 
 // AddReviewedID godoc
 // @Summary Add reviewed video ID
-// @Description Save a video's approved, rejected, or recheck status. A completed review must be approved or rejected.
+// @Description Save a video's approved or rejected result, or toggle recheck mode for all videos without clearing their results.
 // @Tags review
 // @Accept json
 // @Produce json
@@ -160,15 +157,20 @@ func AddReviewedID(c *gin.Context) {
 		return
 	}
 
-	if req.Status == "" {
-		req.Status = reviewStatusRecheck
-	}
-	if !isValidReviewStatus(req.Status) {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid review status"})
-		return
+	if req.RecheckAll != nil {
+		state.RecheckAll = *req.RecheckAll
+	} else {
+		if req.PostID < 1 {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "post_id is required"})
+			return
+		}
+		if !isValidReviewStatus(req.Status) {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "approved or rejected status is required"})
+			return
+		}
+		state.Statuses[req.PostID] = req.Status
 	}
 
-	state.Statuses[req.PostID] = req.Status
 	normalizeReviewState(state)
 	if err := saveReviewState(state); err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to save review state: " + err.Error()})
