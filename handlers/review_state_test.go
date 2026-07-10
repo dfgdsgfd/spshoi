@@ -151,3 +151,48 @@ func TestReviewState_InvalidBody(t *testing.T) {
 		t.Errorf("expected 400, got %d", w.Code)
 	}
 }
+
+func TestReviewState_Statuses(t *testing.T) {
+	tmp := t.TempDir() + "/test_review_state.json"
+	os.Setenv("REVIEW_STATE_PATH", tmp)
+	defer os.Unsetenv("REVIEW_STATE_PATH")
+
+	r := setupRouter()
+
+	for _, body := range []string{
+		`{"post_id": 123, "status": "approved"}`,
+		`{"post_id": 456, "status": "rejected"}`,
+		`{"post_id": 789, "status": "recheck"}`,
+	} {
+		req, _ := http.NewRequest(http.MethodPost, "/api/review/state", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 for %s, got %d", body, w.Code)
+		}
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, "/api/review/state", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	var state ReviewState
+	if err := json.Unmarshal(w.Body.Bytes(), &state); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if state.Statuses[123] != reviewStatusApproved || state.Statuses[456] != reviewStatusRejected || state.Statuses[789] != reviewStatusRecheck {
+		t.Errorf("unexpected statuses: %v", state.Statuses)
+	}
+	if len(state.ReviewedIDs) != 2 {
+		t.Errorf("recheck should not be counted as completed, got %v", state.ReviewedIDs)
+	}
+
+	req, _ = http.NewRequest(http.MethodPost, "/api/review/state", strings.NewReader(`{"post_id": 1, "status": "unknown"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid status, got %d", w.Code)
+	}
+}

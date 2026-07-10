@@ -66,6 +66,12 @@ definitions:
     type: object
   handlers.GetVideoURLRequest:
     properties:
+      original_path:
+        example: video/2026-05-24/2c61e89ed6_nrSXt1/default_5b41c0/index.m3u8
+        type: string
+      p720_path:
+        example: video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8
+        type: string
       post_id:
         example: 11434
         type: integer
@@ -88,12 +94,37 @@ definitions:
       video_url:
         type: string
     type: object
+  handlers.PageCacheState:
+    properties:
+      current_page:
+        type: integer
+    type: object
   handlers.ReviewState:
     properties:
       reviewed_ids:
         items:
           type: integer
         type: array
+      statuses:
+        additionalProperties:
+          type: string
+        type: object
+    type: object
+  handlers.ReviewStatusRequest:
+    properties:
+      post_id:
+        example: 12345
+        type: integer
+      status:
+        enum:
+        - reviewed
+        - approved
+        - rejected
+        - recheck
+        example: approved
+        type: string
+    required:
+    - post_id
     type: object
   handlers.ToggleResult:
     properties:
@@ -196,6 +227,69 @@ paths:
       summary: Proxy video content
       tags:
       - videos
+  /review/pages:
+    delete:
+      description: Reset the remembered page number back to 1
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.PageCacheState'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Reset page number
+      tags:
+      - review
+    get:
+      description: Returns the remembered current page number from server-side JSON
+        file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.PageCacheState'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Get remembered page number
+      tags:
+      - review
+    post:
+      consumes:
+      - application/json
+      description: Save the current page number to server-side JSON file
+      parameters:
+      - description: Current page number
+        in: body
+        name: request
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.PageCacheState'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Save current page number
+      tags:
+      - review
   /review/state:
     delete:
       description: Clear all reviewed video IDs from server-side JSON file
@@ -214,8 +308,8 @@ paths:
       tags:
       - review
     get:
-      description: Returns the list of reviewed video IDs stored in server-side JSON
-        file
+      description: Returns the detailed review status and compatibility list of completed
+        video IDs stored in server-side JSON file
       produces:
       - application/json
       responses:
@@ -233,14 +327,15 @@ paths:
     post:
       consumes:
       - application/json
-      description: Add a video ID to the reviewed list in server-side JSON file
+      description: Save a video's review status. Omit status to mark it as a generic
+        completed review.
       parameters:
-      - description: Post ID to add
+      - description: Video review status
         in: body
         name: request
         required: true
         schema:
-          type: object
+          $ref: '#/definitions/handlers.ReviewStatusRequest'
       produces:
       - application/json
       responses:

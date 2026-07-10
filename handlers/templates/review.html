@@ -50,9 +50,57 @@
             margin-bottom: 4px;
             word-break: break-all;
         }
+        .video-title-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+        .video-title-row h2 { margin-bottom: 0; }
         .video-info .meta {
             font-size: 13px;
             color: #888;
+        }
+        .review-status-bar {
+            width: 100%;
+            max-width: 960px;
+            margin: 12px 0 0;
+            padding: 10px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            border: 1px solid #0f3460;
+            border-radius: 8px;
+            background: #16213e;
+        }
+        .review-status-copy {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+            color: #bbb;
+            font-size: 13px;
+        }
+        .review-status-hint { color: #888; }
+        .audit-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #fff;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+        }
+        .audit-toggle input {
+            width: 18px;
+            height: 18px;
+            accent-color: #27ae60;
+            cursor: pointer;
         }
         .player-wrapper {
             width: 100%;
@@ -298,6 +346,10 @@
         .playlist-item.reviewed {
             opacity: 0.72;
         }
+        .playlist-item.status-approved { border-left: 3px solid #27ae60; }
+        .playlist-item.status-rejected { border-left: 3px solid #e74c3c; }
+        .playlist-item.status-reviewed { border-left: 3px solid #3498db; }
+        .playlist-item.status-recheck { border-left: 3px solid #f39c12; }
         .playlist-item-title {
             font-size: 14px;
             font-weight: 600;
@@ -330,6 +382,18 @@
         .playlist-badge.reviewed {
             background: rgba(39, 174, 96, 0.18);
             color: #58d68d;
+        }
+        .playlist-badge.approved {
+            background: rgba(39, 174, 96, 0.18);
+            color: #58d68d;
+        }
+        .playlist-badge.rejected {
+            background: rgba(231, 76, 60, 0.18);
+            color: #f1948a;
+        }
+        .playlist-badge.recheck {
+            background: rgba(243, 156, 18, 0.18);
+            color: #f8c471;
         }
         .playlist-empty {
             color: #888;
@@ -433,6 +497,7 @@
             .container { padding: 12px; }
             .video-info h2 { font-size: 15px; }
             .video-info .meta { font-size: 12px; }
+            .review-status-bar { align-items: flex-start; flex-direction: column; }
             .controls {
                 flex-wrap: wrap;
                 justify-content: center;
@@ -483,6 +548,7 @@
         </div>
         <div class="stats">
             已审核: <span id="reviewedCount">0</span> 个 |
+            当前页复审: <span id="recheckCount">0</span> 个 |
             当前页: <span id="currentPage">-</span> |
             总数: <span id="totalCount">-</span>
             <label class="filter-toggle" id="filterToggleLabel">
@@ -501,10 +567,10 @@
                 <button class="btn btn-page" type="button" id="btnPageJump" onclick="jumpToPage()">跳转</button>
             </div>
             <div class="page-tool-group">
-                <label for="reviewedPageInput">已审核到第</label>
+                <label for="reviewedPageInput">从第</label>
                 <input type="number" min="0" step="1" id="reviewedPageInput" class="page-tool-input" placeholder="页码" aria-label="输入已审核到的页码" />
-                <span>页</span>
-                <button class="btn btn-mark" type="button" id="btnReviewedPage" onclick="markReviewedPages()">标记</button>
+                <span>页之后继续</span>
+                <button class="btn btn-mark" type="button" id="btnReviewedPage" onclick="markReviewedPages()">继续</button>
             </div>
         </div>
     </div>
@@ -513,7 +579,10 @@
         <div id="contentLayout" class="content-layout">
             <div id="videoSection">
                 <div class="video-info">
-                    <h2 id="videoTitle">加载中...</h2>
+                    <div class="video-title-row">
+                        <h2 id="videoTitle">加载中...</h2>
+                        <span id="currentReviewStatus" class="playlist-badge recheck" aria-live="polite">复审</span>
+                    </div>
                     <div class="meta">
                         ID: <span id="videoId">-</span> |
                         时长: <span id="videoDuration">-</span> |
@@ -525,6 +594,17 @@
                     <img id="videoCover" style="width:100%;height:100%;object-fit:contain;position:absolute;top:0;left:0;z-index:1;cursor:pointer;" onclick="startPlayback()" />
                     <video id="videoPlayer" controls playsinline></video>
                     <div class="loading" id="loadingText">加载中...</div>
+                </div>
+
+                <div class="review-status-bar">
+                    <div class="review-status-copy">
+                        <span>审核状态</span>
+                        <span id="reviewStatusHint" class="review-status-hint">未勾选的视频会保留在复审状态。</span>
+                    </div>
+                    <label class="audit-toggle" for="reviewCheckbox">
+                        <input type="checkbox" id="reviewCheckbox" onchange="toggleCurrentReview()" />
+                        已完成审核
+                    </label>
                 </div>
 
                 <div class="controls">
@@ -542,8 +622,8 @@
         </div>
  
         <div id="emptyState" class="empty-state" style="display:none">
-            <h2>🎉 全部审核完毕</h2>
-            <p>当前页面的所有视频已审核完毕，正在加载下一页...</p>
+            <h2 id="emptyStateTitle">当前页暂无视频</h2>
+            <p id="emptyStateText">请使用上方页码工具手动切换页面。</p>
         </div>
     </div>
 
@@ -555,6 +635,7 @@
 
         let isAuthenticated = false;
         let pendingAction = null;
+        let pendingCancelAction = null;
         let videos = [];
         let allVideos = []; // unfiltered list from API
         let showDisabledOnly = false;
@@ -566,15 +647,17 @@
         let hlsRetryCount = 0;
         const HLS_MAX_RETRIES = 3;
         let reviewedIds = [];
+        let reviewStatuses = {};
         let searchKeyword = '';
 
         // Password verification - only prompt if not yet authenticated
-        function requirePassword(action) {
+        function requirePassword(action, cancelAction = null) {
             if (isAuthenticated) {
                 action();
                 return;
             }
             pendingAction = action;
+            pendingCancelAction = cancelAction;
             document.getElementById('passwordError').style.display = 'none';
             document.getElementById('passwordInput').value = '';
             document.getElementById('passwordOverlay').style.display = 'flex';
@@ -586,10 +669,10 @@
             if (input === REVIEW_PASSWORD) {
                 isAuthenticated = true;
                 document.getElementById('passwordOverlay').style.display = 'none';
-                if (pendingAction) {
-                    pendingAction();
-                    pendingAction = null;
-                }
+                const action = pendingAction;
+                pendingAction = null;
+                pendingCancelAction = null;
+                if (action) action();
             } else {
                 document.getElementById('passwordError').style.display = 'block';
                 document.getElementById('passwordInput').value = '';
@@ -599,7 +682,10 @@
 
         function cancelPassword() {
             document.getElementById('passwordOverlay').style.display = 'none';
+            const cancelAction = pendingCancelAction;
             pendingAction = null;
+            pendingCancelAction = null;
+            if (cancelAction) cancelAction();
         }
 
         // Allow Enter key on password input
@@ -608,8 +694,30 @@
             if (e.key === 'Escape') cancelPassword();
         });
 
+        function getReviewStatus(video) {
+            return reviewStatuses[String(video.id)] || 'recheck';
+        }
+
         function isReviewed(video) {
-            return reviewedIds.includes(video.id);
+            return getReviewStatus(video) !== 'recheck';
+        }
+
+        function getReviewStatusLabel(status) {
+            return {
+                recheck: '复审',
+                reviewed: '已审核',
+                approved: '已通过',
+                rejected: '已拒绝',
+            }[status] || '复审';
+        }
+
+        function getReviewStatusHint(status) {
+            return {
+                recheck: '未勾选，保留在复审状态。',
+                reviewed: '已勾选，尚未标记通过或拒绝。',
+                approved: '已通过，审核结果已保存。',
+                rejected: '已拒绝，视频已提交屏蔽。',
+            }[status] || '未勾选，保留在复审状态。';
         }
 
         function findNextPendingIndex(startIndex) {
@@ -639,6 +747,8 @@
                 item.className = 'playlist-item';
                 if (index === currentIndex) item.classList.add('current');
                 if (isReviewed(video)) item.classList.add('reviewed');
+                const status = getReviewStatus(video);
+                item.classList.add('status-' + status);
                 item.onclick = () => {
                     currentIndex = index;
                     displayCurrentVideo();
@@ -655,8 +765,8 @@
                 idText.textContent = `ID: ${video.id}`;
 
                 const badge = document.createElement('span');
-                badge.className = 'playlist-badge ' + (isReviewed(video) ? 'reviewed' : 'pending');
-                badge.textContent = isReviewed(video) ? '已审核' : '待审核';
+                badge.className = 'playlist-badge ' + status;
+                badge.textContent = getReviewStatusLabel(status);
 
                 if (isVideoDisabled(video)) {
                     const disabledBadge = document.createElement('span');
@@ -699,49 +809,58 @@
             }
         }
 
-        async function resetServerPageNumber() {
-            try {
-                await fetch(API_BASE + '/review/pages', { method: 'DELETE' });
-            } catch (e) {
-                console.warn('Failed to reset page number:', e);
-            }
-        }
-
         async function fetchReviewedIds() {
             try {
                 const resp = await fetch(API_BASE + '/review/state');
                 if (resp.ok) {
-                    const data = await resp.json();
-                    reviewedIds = data.reviewed_ids || [];
+                    applyReviewState(await resp.json());
                 } else {
                     reviewedIds = [];
+                    reviewStatuses = {};
                 }
             } catch {
                 reviewedIds = [];
+                reviewStatuses = {};
             }
+        }
+
+        function applyReviewState(data) {
+            reviewedIds = data.reviewed_ids || [];
+            reviewStatuses = data.statuses || {};
+            // Older servers only return reviewed_ids. Treat those entries as
+            // generic completed reviews rather than losing their state.
+            reviewedIds.forEach(id => {
+                if (!reviewStatuses[String(id)]) {
+                    reviewStatuses[String(id)] = 'reviewed';
+                }
+            });
         }
 
         function getReviewedIds() {
             return reviewedIds;
         }
 
-        async function addReviewedId(id) {
-            if (reviewedIds.includes(id)) return;
+        async function setReviewStatus(id, status) {
             try {
                 const resp = await fetch(API_BASE + '/review/state', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ post_id: id }),
+                    body: JSON.stringify({ post_id: id, status }),
                 });
                 const data = await resp.json();
-                reviewedIds = data.reviewed_ids || [];
-            } catch {
-                if (!reviewedIds.includes(id)) {
-                    reviewedIds.push(id);
+                if (!resp.ok) {
+                    throw new Error(data.error || '审核状态保存失败');
                 }
+                applyReviewState(data);
+                updateStats();
+                renderVideoList();
+                updateCurrentReviewStatus();
+                return true;
+            } catch (err) {
+                showToast('审核状态保存失败: ' + err.message, 'error');
+                updateCurrentReviewStatus();
+                return false;
             }
-            updateStats();
-            renderVideoList();
         }
 
         async function clearReviewed() {
@@ -750,22 +869,25 @@
                     try {
                         const resp = await fetch(API_BASE + '/review/state', { method: 'DELETE' });
                         const data = await resp.json();
-                        reviewedIds = data.reviewed_ids || [];
-                    } catch {
-                        reviewedIds = [];
+                        if (!resp.ok) {
+                            throw new Error(data.error || '审核记录清除失败');
+                        }
+                        applyReviewState(data);
+                    } catch (err) {
+                        showToast('审核记录清除失败: ' + err.message, 'error');
+                        return;
                     }
-                    await resetServerPageNumber();
-                    currentPage = 1;
-                    currentIndex = 0;
                     updateStats();
+                    renderVideoList();
+                    updateCurrentReviewStatus();
                     showToast('审核记录已清除', 'info');
-                    loadVideos();
                 }
             });
         }
 
         function updateStats() {
             document.getElementById('reviewedCount').textContent = getReviewedIds().length;
+            document.getElementById('recheckCount').textContent = videos.filter(video => getReviewStatus(video) === 'recheck').length;
             document.getElementById('currentPage').textContent = currentPage + '/' + totalPages;
             document.getElementById('totalCount').textContent = totalCount;
             document.getElementById('pageJumpInput').value = currentPage;
@@ -822,12 +944,7 @@
 
                 if (!videos.length) {
                     renderVideoList();
-                    if (currentPage < totalPages && !preferLast) {
-                        currentPage++;
-                        loadVideos();
-                        return;
-                    }
-                    showEmptyState();
+                    showEmptyState('当前页暂无可展示的视频', '筛选条件下没有视频；请手动切换页面或调整筛选条件。');
                     updateStats();
                     return;
                 }
@@ -842,11 +959,6 @@
                 } else {
                     const nextPendingIndex = findNextPendingIndex(0);
                     if (nextPendingIndex === -1) {
-                        if (currentPage < totalPages) {
-                            currentPage++;
-                            loadVideos();
-                            return;
-                        }
                         currentIndex = 0;
                     } else {
                         currentIndex = nextPendingIndex;
@@ -861,7 +973,9 @@
             }
         }
 
-        function showEmptyState() {
+        function showEmptyState(title = '当前页暂无视频', message = '请使用上方页码工具手动切换页面。') {
+            document.getElementById('emptyStateTitle').textContent = title;
+            document.getElementById('emptyStateText').textContent = message;
             document.getElementById('contentLayout').style.display = 'none';
             document.getElementById('emptyState').style.display = 'flex';
         }
@@ -885,6 +999,7 @@
             document.getElementById('videoId').textContent = video.id;
             document.getElementById('videoDuration').textContent = formatDuration(video.duration);
             document.getElementById('videoDate').textContent = video.created_at ? video.created_at.split('T')[0] : '-';
+            updateCurrentReviewStatus();
             const loadingText = document.getElementById('loadingText');
             loadingText.textContent = '点击封面播放完整视频';
             loadingText.style.display = 'block';
@@ -909,6 +1024,45 @@
 
             setButtonsEnabled(true);
             renderVideoList();
+        }
+
+        function updateCurrentReviewStatus() {
+            const statusEl = document.getElementById('currentReviewStatus');
+            const hintEl = document.getElementById('reviewStatusHint');
+            const checkbox = document.getElementById('reviewCheckbox');
+
+            if (!videos.length || currentIndex >= videos.length) {
+                statusEl.className = 'playlist-badge recheck';
+                statusEl.textContent = '复审';
+                hintEl.textContent = '未勾选的视频会保留在复审状态。';
+                checkbox.checked = false;
+                checkbox.disabled = true;
+                return;
+            }
+
+            const status = getReviewStatus(videos[currentIndex]);
+            statusEl.className = 'playlist-badge ' + status;
+            statusEl.textContent = getReviewStatusLabel(status);
+            hintEl.textContent = getReviewStatusHint(status);
+            checkbox.checked = status !== 'recheck';
+            checkbox.disabled = document.getElementById('btnApprove').disabled;
+        }
+
+        function toggleCurrentReview() {
+            if (!videos.length || currentIndex >= videos.length) return;
+
+            const checkbox = document.getElementById('reviewCheckbox');
+            const targetStatus = checkbox.checked ? 'reviewed' : 'recheck';
+            const video = videos[currentIndex];
+
+            requirePassword(async () => {
+                checkbox.disabled = true;
+                const saved = await setReviewStatus(video.id, targetStatus);
+                if (saved) {
+                    showToast(targetStatus === 'recheck' ? '已设为复审' : '已勾选为完成审核', 'info');
+                }
+                updateCurrentReviewStatus();
+            }, updateCurrentReviewStatus);
         }
 
         async function startPlayback() {
@@ -1043,6 +1197,7 @@
             document.getElementById('btnApprove').disabled = !enabled;
             document.getElementById('btnReject').disabled = !enabled;
             document.getElementById('btnNext').disabled = !enabled;
+            document.getElementById('reviewCheckbox').disabled = !enabled;
             updatePrevButton();
         }
 
@@ -1050,48 +1205,16 @@
             document.getElementById('btnPrev').disabled = currentPage <= 1 && currentIndex <= 0;
         }
 
-        async function moveToNextPendingVideo() {
-            if (showDisabledOnly) {
-                // When filtering blocked videos, just move to next video in the list
-                if (currentIndex + 1 < videos.length) {
-                    currentIndex++;
-                    displayCurrentVideo();
-                } else if (currentPage < totalPages) {
-                    currentPage++;
-                    loadVideos();
-                } else {
-                    renderVideoList();
-                    showEmptyState();
-                    updateStats();
-                }
-                return;
-            }
-
-            const nextPendingIndex = findNextPendingIndex(currentIndex + 1);
-            if (nextPendingIndex !== -1) {
-                currentIndex = nextPendingIndex;
-                displayCurrentVideo();
-                return;
-            }
-
-            if (currentPage < totalPages) {
-                currentPage++;
-                loadVideos();
-                return;
-            }
-
-            renderVideoList();
-            showEmptyState();
-            updateStats();
-        }
-
         async function approveVideo() {
             if (currentIndex >= videos.length) return;
             requirePassword(async () => {
                 const video = videos[currentIndex];
-                await addReviewedId(video.id);
-                showToast('已通过: ' + video.title, 'success');
-                moveToNextPendingVideo();
+                setButtonsEnabled(false);
+                const saved = await setReviewStatus(video.id, 'approved');
+                setButtonsEnabled(true);
+                if (saved) {
+                    showToast('已通过: ' + video.title, 'success');
+                }
             });
         }
 
@@ -1108,20 +1231,18 @@
                         body: JSON.stringify({ post_ids: [video.id] }),
                     });
                     const data = await resp.json();
-                    if (resp.ok && data.disabled > 0) {
-                        await addReviewedId(video.id);
+                    if (!resp.ok || data.disabled < 1) {
+                        throw new Error(data.results?.[0]?.message || data.error || '上游未确认屏蔽');
+                    }
+                    const saved = await setReviewStatus(video.id, 'rejected');
+                    if (saved) {
                         showToast(`已拒绝并禁用: ${video.title}`, 'error');
-                    } else {
-                        await addReviewedId(video.id);
-                        showToast(`拒绝操作已记录 (上游: ${data.results?.[0]?.message || 'unknown'})`, 'info');
                     }
                 } catch (err) {
                     showToast(`禁用请求失败: ${err.message}`, 'error');
+                } finally {
                     setButtonsEnabled(true);
-                    return;
                 }
-
-                moveToNextPendingVideo();
             });
         }
 
@@ -1185,7 +1306,7 @@
             currentPage = Math.max(1, nextPage);
             currentIndex = 0;
             loadVideos({ preferredIndex: 0 });
-            showToast(`已标记前 ${reviewedPage} 页为已审核`, 'success');
+            showToast(`已从第 ${reviewedPage} 页之后继续`, 'success');
         }
 
         function doSearch() {
@@ -1230,7 +1351,7 @@
             if (videos.length) {
                 displayCurrentVideo();
             } else {
-                showEmptyState();
+                showEmptyState('当前页没有被屏蔽的视频', '请关闭“只显示被屏蔽视频”或手动切换页面。');
             }
             updateStats();
         }

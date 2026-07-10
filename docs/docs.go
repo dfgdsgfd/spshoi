@@ -103,9 +103,103 @@ const docTemplate = `{
                 }
             }
         },
+        "/review/pages": {
+            "get": {
+                "description": "Returns the remembered current page number from server-side JSON file",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "review"
+                ],
+                "summary": "Get remembered page number",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.PageCacheState"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Save the current page number to server-side JSON file",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "review"
+                ],
+                "summary": "Save current page number",
+                "parameters": [
+                    {
+                        "description": "Current page number",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.PageCacheState"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Reset the remembered page number back to 1",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "review"
+                ],
+                "summary": "Reset page number",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.PageCacheState"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/review/state": {
             "get": {
-                "description": "Returns the list of reviewed video IDs stored in server-side JSON file",
+                "description": "Returns the detailed review status and compatibility list of completed video IDs stored in server-side JSON file",
                 "produces": [
                     "application/json"
                 ],
@@ -129,7 +223,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "Add a video ID to the reviewed list in server-side JSON file",
+                "description": "Save a video's review status. Omit status to mark it as a generic completed review.",
                 "consumes": [
                     "application/json"
                 ],
@@ -142,12 +236,12 @@ const docTemplate = `{
                 "summary": "Add reviewed video ID",
                 "parameters": [
                     {
-                        "description": "Post ID to add",
+                        "description": "Video review status",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "type": "object"
+                            "$ref": "#/definitions/handlers.ReviewStatusRequest"
                         }
                     }
                 ],
@@ -511,6 +605,14 @@ const docTemplate = `{
                 "post_id"
             ],
             "properties": {
+                "original_path": {
+                    "type": "string",
+                    "example": "video/2026-05-24/2c61e89ed6_nrSXt1/default_5b41c0/index.m3u8"
+                },
+                "p720_path": {
+                    "type": "string",
+                    "example": "video/2026-05-24/2c61e89ed6_nrSXt1/720p_5f0e3b/index.m3u8"
+                },
                 "post_id": {
                     "type": "integer",
                     "example": 11434
@@ -541,6 +643,14 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.PageCacheState": {
+            "type": "object",
+            "properties": {
+                "current_page": {
+                    "type": "integer"
+                }
+            }
+        },
         "handlers.ReviewState": {
             "type": "object",
             "properties": {
@@ -549,6 +659,34 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
+                },
+                "statuses": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "handlers.ReviewStatusRequest": {
+            "type": "object",
+            "required": [
+                "post_id"
+            ],
+            "properties": {
+                "post_id": {
+                    "type": "integer",
+                    "example": 12345
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "reviewed",
+                        "approved",
+                        "rejected",
+                        "recheck"
+                    ],
+                    "example": "approved"
                 }
             }
         },
