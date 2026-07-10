@@ -223,7 +223,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "Save a video's approved, rejected, or recheck status. A completed review must be approved or rejected.",
+                "description": "Save a video's approved or rejected result, or toggle recheck mode for all videos without clearing their results.",
                 "consumes": [
                     "application/json"
                 ],
@@ -654,6 +654,9 @@ const docTemplate = `{
         "handlers.ReviewState": {
             "type": "object",
             "properties": {
+                "recheck_all": {
+                    "type": "boolean"
+                },
                 "reviewed_ids": {
                     "type": "array",
                     "items": {
@@ -670,20 +673,19 @@ const docTemplate = `{
         },
         "handlers.ReviewStatusRequest": {
             "type": "object",
-            "required": [
-                "post_id"
-            ],
             "properties": {
                 "post_id": {
                     "type": "integer",
                     "example": 12345
                 },
+                "recheck_all": {
+                    "type": "boolean"
+                },
                 "status": {
                     "type": "string",
                     "enum": [
                         "approved",
-                        "rejected",
-                        "recheck"
+                        "rejected"
                     ],
                     "example": "approved"
                 }

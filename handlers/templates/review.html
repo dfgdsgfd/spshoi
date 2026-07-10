@@ -685,11 +685,11 @@
             const originalResult = getStoredReviewResult(video);
             if (status === 'recheck') {
                 if (recheckAll && originalResult) {
-                    return `复审（原审核：${originalResult === 'approved' ? '同意' : '拒绝'}）`;
+                    return `复审（原审核：${originalResult === 'approved' ? '已通过' : '已屏蔽'}）`;
                 }
                 return '复审';
             }
-            return status === 'approved' ? '已同意' : '已拒绝';
+            return status === 'approved' ? '已通过' : '已屏蔽';
         }
 
         function getReviewStatusHint(video) {
@@ -697,11 +697,11 @@
             const originalResult = getStoredReviewResult(video);
             if (status === 'recheck') {
                 if (recheckAll && originalResult) {
-                    return `复审中，原审核结果为“${originalResult === 'approved' ? '同意' : '拒绝'}”，结果已保留。`;
+                    return `复审中，原审核结果为“${originalResult === 'approved' ? '已通过' : '已屏蔽'}”，结果已保留。`;
                 }
-                return '尚未标注同意或拒绝，处于复审状态。';
+                return '尚未标注通过或屏蔽，处于复审状态。';
             }
-            return status === 'approved' ? '已同意，审核结果已保存。' : '已拒绝，视频已提交屏蔽。';
+            return status === 'approved' ? '已通过，审核结果已保存。' : '已屏蔽，视频已提交屏蔽。';
         }
 
         function findNextPendingIndex(startIndex) {
@@ -1052,45 +1052,19 @@
         function updateCurrentReviewStatus() {
             const statusEl = document.getElementById('currentReviewStatus');
             const hintEl = document.getElementById('reviewStatusHint');
-            const checkbox = document.getElementById('reviewCheckbox');
 
             if (!videos.length || currentIndex >= videos.length) {
                 statusEl.className = 'playlist-badge recheck';
                 statusEl.textContent = '复审';
-                hintEl.textContent = '通过或拒绝后会自动勾选并标注结果。';
-                checkbox.checked = false;
-                checkbox.disabled = true;
+                hintEl.textContent = '通过或屏蔽后会立即保存并显示结果。';
                 return;
             }
 
-            const status = getReviewStatus(videos[currentIndex]);
-            statusEl.className = 'playlist-badge ' + status;
-            statusEl.textContent = getReviewStatusLabel(status);
-            hintEl.textContent = getReviewStatusHint(status);
-            checkbox.checked = status !== 'recheck';
-            checkbox.disabled = document.getElementById('btnApprove').disabled;
-        }
-
-        function toggleCurrentReview() {
-            if (!videos.length || currentIndex >= videos.length) return;
-
-            const checkbox = document.getElementById('reviewCheckbox');
             const video = videos[currentIndex];
-
-            if (checkbox.checked) {
-                checkbox.checked = false;
-                showToast('请使用“通过”或“拒绝”标注审核结果', 'info');
-                return;
-            }
-
-            requirePassword(async () => {
-                checkbox.disabled = true;
-                const saved = await setReviewStatus(video.id, 'recheck');
-                if (saved) {
-                    showToast('已设为复审', 'info');
-                }
-                updateCurrentReviewStatus();
-            }, updateCurrentReviewStatus);
+            const status = getReviewStatus(video);
+            statusEl.className = 'playlist-badge ' + status;
+            statusEl.textContent = getReviewStatusLabel(video);
+            hintEl.textContent = getReviewStatusHint(video);
         }
 
         async function startPlayback() {
@@ -1225,7 +1199,6 @@
             document.getElementById('btnApprove').disabled = !enabled;
             document.getElementById('btnReject').disabled = !enabled;
             document.getElementById('btnNext').disabled = !enabled;
-            document.getElementById('reviewCheckbox').disabled = !enabled;
             updatePrevButton();
         }
 

@@ -187,12 +187,17 @@ func TestReviewState_Statuses(t *testing.T) {
 		t.Errorf("expected two completed reviews, got %v", state.ReviewedIDs)
 	}
 
-	req, _ = http.NewRequest(http.MethodPost, "/api/review/state", strings.NewReader(`{"post_id": 1, "status": "unknown"}`))
-	req.Header.Set("Content-Type", "application/json")
-	w = httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400 for invalid status, got %d", w.Code)
+	for _, body := range []string{
+		`{"post_id": 1, "status": "unknown"}`,
+		`{"post_id": 1, "status": "recheck"}`,
+	} {
+		req, _ = http.NewRequest(http.MethodPost, "/api/review/state", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w = httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 for invalid status %s, got %d", body, w.Code)
+		}
 	}
 }
 

@@ -30,9 +30,9 @@ type ReviewState struct {
 
 // ReviewStatusRequest updates one video's detailed review status.
 type ReviewStatusRequest struct {
-	PostID     int   `json:"post_id" example:"12345"`
+	PostID     int    `json:"post_id" example:"12345"`
 	Status     string `json:"status" enums:"approved,rejected" example:"approved"`
-	RecheckAll *bool `json:"recheck_all"`
+	RecheckAll *bool  `json:"recheck_all"`
 }
 
 var reviewStateMu sync.Mutex

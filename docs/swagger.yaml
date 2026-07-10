@@ -101,6 +101,8 @@ definitions:
     type: object
   handlers.ReviewState:
     properties:
+      recheck_all:
+        type: boolean
       reviewed_ids:
         items:
           type: integer
@@ -115,15 +117,14 @@ definitions:
       post_id:
         example: 12345
         type: integer
+      recheck_all:
+        type: boolean
       status:
         enum:
         - approved
         - rejected
-        - recheck
         example: approved
         type: string
-    required:
-    - post_id
     type: object
   handlers.ToggleResult:
     properties:
@@ -326,8 +327,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Save a video's approved, rejected, or recheck status. A completed
-        review must be approved or rejected.
+      description: Save a video's approved or rejected result, or toggle recheck mode
+        for all videos without clearing their results.
       parameters:
       - description: Video review status
         in: body
