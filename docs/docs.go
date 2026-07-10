@@ -223,7 +223,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "Save a video's review status. Omit status to mark it as a generic completed review.",
+                "description": "Save a video's approved, rejected, or recheck status. A completed review must be approved or rejected.",
                 "consumes": [
                     "application/json"
                 ],
@@ -681,7 +681,6 @@ const docTemplate = `{
                 "status": {
                     "type": "string",
                     "enum": [
-                        "reviewed",
                         "approved",
                         "rejected",
                         "recheck"

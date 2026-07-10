@@ -42,7 +42,7 @@ func TestReviewState_AddAndGet(t *testing.T) {
 	r := setupRouter()
 
 	// Add first ID
-	req, _ := http.NewRequest(http.MethodPost, "/api/review/state", strings.NewReader(`{"post_id": 123}`))
+	req, _ := http.NewRequest(http.MethodPost, "/api/review/state", strings.NewReader(`{"post_id": 123, "status": "approved"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -58,7 +58,7 @@ func TestReviewState_AddAndGet(t *testing.T) {
 	}
 
 	// Add second ID
-	req, _ = http.NewRequest(http.MethodPost, "/api/review/state", strings.NewReader(`{"post_id": 456}`))
+	req, _ = http.NewRequest(http.MethodPost, "/api/review/state", strings.NewReader(`{"post_id": 456, "status": "rejected"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -69,7 +69,7 @@ func TestReviewState_AddAndGet(t *testing.T) {
 	}
 
 	// Add duplicate ID (should not add again)
-	req, _ = http.NewRequest(http.MethodPost, "/api/review/state", strings.NewReader(`{"post_id": 123}`))
+	req, _ = http.NewRequest(http.MethodPost, "/api/review/state", strings.NewReader(`{"post_id": 123, "status": "approved"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -109,12 +109,12 @@ func TestReviewState_Clear(t *testing.T) {
 	r := setupRouter()
 
 	// Add some IDs first
-	req, _ := http.NewRequest(http.MethodPost, "/api/review/state", strings.NewReader(`{"post_id": 111}`))
+	req, _ := http.NewRequest(http.MethodPost, "/api/review/state", strings.NewReader(`{"post_id": 111, "status": "approved"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	req, _ = http.NewRequest(http.MethodPost, "/api/review/state", strings.NewReader(`{"post_id": 222}`))
+	req, _ = http.NewRequest(http.MethodPost, "/api/review/state", strings.NewReader(`{"post_id": 222, "status": "rejected"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -194,5 +194,31 @@ func TestReviewState_Statuses(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for invalid status, got %d", w.Code)
+	}
+}
+
+func TestReviewState_LegacyCompletedRecordRequiresRecheck(t *testing.T) {
+	tmp := t.TempDir() + "/test_review_state.json"
+	os.Setenv("REVIEW_STATE_PATH", tmp)
+	defer os.Unsetenv("REVIEW_STATE_PATH")
+
+	if err := os.WriteFile(tmp, []byte(`{"reviewed_ids":[123]}`), 0600); err != nil {
+		t.Fatalf("failed to write legacy state: %v", err)
+	}
+
+	r := setupRouter()
+	req, _ := http.NewRequest(http.MethodGet, "/api/review/state", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	var state ReviewState
+	if err := json.Unmarshal(w.Body.Bytes(), &state); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if state.Statuses[123] != reviewStatusRecheck {
+		t.Errorf("legacy record should require recheck, got %q", state.Statuses[123])
+	}
+	if len(state.ReviewedIDs) != 0 {
+		t.Errorf("legacy record without a result should not be completed, got %v", state.ReviewedIDs)
 	}
 }

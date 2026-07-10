@@ -343,12 +343,8 @@
             border-color: #e94560;
             box-shadow: 0 0 0 1px rgba(233, 69, 96, 0.3);
         }
-        .playlist-item.reviewed {
-            opacity: 0.72;
-        }
         .playlist-item.status-approved { border-left: 3px solid #27ae60; }
         .playlist-item.status-rejected { border-left: 3px solid #e74c3c; }
-        .playlist-item.status-reviewed { border-left: 3px solid #3498db; }
         .playlist-item.status-recheck { border-left: 3px solid #f39c12; }
         .playlist-item-title {
             font-size: 14px;
@@ -374,14 +370,6 @@
             border-radius: 999px;
             font-size: 11px;
             font-weight: 700;
-        }
-        .playlist-badge.pending {
-            background: rgba(52, 152, 219, 0.18);
-            color: #5dade2;
-        }
-        .playlist-badge.reviewed {
-            background: rgba(39, 174, 96, 0.18);
-            color: #58d68d;
         }
         .playlist-badge.approved {
             background: rgba(39, 174, 96, 0.18);
@@ -547,7 +535,7 @@
             <button class="btn btn-clear" onclick="clearSearch()" id="btnClearSearch" style="display:none" aria-label="清除搜索">✕ 清除</button>
         </div>
         <div class="stats">
-            已审核: <span id="reviewedCount">0</span> 个 |
+            已判定: <span id="reviewedCount">0</span> 个 |
             当前页复审: <span id="recheckCount">0</span> 个 |
             当前页: <span id="currentPage">-</span> |
             总数: <span id="totalCount">-</span>
@@ -568,7 +556,7 @@
             </div>
             <div class="page-tool-group">
                 <label for="reviewedPageInput">从第</label>
-                <input type="number" min="0" step="1" id="reviewedPageInput" class="page-tool-input" placeholder="页码" aria-label="输入已审核到的页码" />
+                <input type="number" min="0" step="1" id="reviewedPageInput" class="page-tool-input" placeholder="页码" aria-label="输入继续审核的位置" />
                 <span>页之后继续</span>
                 <button class="btn btn-mark" type="button" id="btnReviewedPage" onclick="markReviewedPages()">继续</button>
             </div>
@@ -599,11 +587,11 @@
                 <div class="review-status-bar">
                     <div class="review-status-copy">
                         <span>审核状态</span>
-                        <span id="reviewStatusHint" class="review-status-hint">未勾选的视频会保留在复审状态。</span>
+                        <span id="reviewStatusHint" class="review-status-hint">通过或拒绝后会自动勾选并标注结果。</span>
                     </div>
                     <label class="audit-toggle" for="reviewCheckbox">
                         <input type="checkbox" id="reviewCheckbox" onchange="toggleCurrentReview()" />
-                        已完成审核
+                        已完成审核（需标注结果）
                     </label>
                 </div>
 
@@ -695,7 +683,8 @@
         });
 
         function getReviewStatus(video) {
-            return reviewStatuses[String(video.id)] || 'recheck';
+            const status = reviewStatuses[String(video.id)] || 'recheck';
+            return status === 'reviewed' ? 'recheck' : status;
         }
 
         function isReviewed(video) {
@@ -705,7 +694,6 @@
         function getReviewStatusLabel(status) {
             return {
                 recheck: '复审',
-                reviewed: '已审核',
                 approved: '已通过',
                 rejected: '已拒绝',
             }[status] || '复审';
@@ -714,7 +702,6 @@
         function getReviewStatusHint(status) {
             return {
                 recheck: '未勾选，保留在复审状态。',
-                reviewed: '已勾选，尚未标记通过或拒绝。',
                 approved: '已通过，审核结果已保存。',
                 rejected: '已拒绝，视频已提交屏蔽。',
             }[status] || '未勾选，保留在复审状态。';
@@ -746,7 +733,6 @@
                 item.type = 'button';
                 item.className = 'playlist-item';
                 if (index === currentIndex) item.classList.add('current');
-                if (isReviewed(video)) item.classList.add('reviewed');
                 const status = getReviewStatus(video);
                 item.classList.add('status-' + status);
                 item.onclick = () => {
@@ -827,11 +813,11 @@
         function applyReviewState(data) {
             reviewedIds = data.reviewed_ids || [];
             reviewStatuses = data.statuses || {};
-            // Older servers only return reviewed_ids. Treat those entries as
-            // generic completed reviews rather than losing their state.
+            // Older servers only return reviewed_ids. Without a pass/reject
+            // result they need recheck, rather than a generic completed state.
             reviewedIds.forEach(id => {
                 if (!reviewStatuses[String(id)]) {
-                    reviewStatuses[String(id)] = 'reviewed';
+                    reviewStatuses[String(id)] = 'recheck';
                 }
             });
         }
@@ -865,7 +851,7 @@
 
         async function clearReviewed() {
             requirePassword(async () => {
-                if (confirm('确定清除所有审核记录？清除后已审核的视频将重新显示。')) {
+                if (confirm('确定清除所有审核结果？清除后视频将回到复审状态。')) {
                     try {
                         const resp = await fetch(API_BASE + '/review/state', { method: 'DELETE' });
                         const data = await resp.json();
@@ -1034,7 +1020,7 @@
             if (!videos.length || currentIndex >= videos.length) {
                 statusEl.className = 'playlist-badge recheck';
                 statusEl.textContent = '复审';
-                hintEl.textContent = '未勾选的视频会保留在复审状态。';
+                hintEl.textContent = '通过或拒绝后会自动勾选并标注结果。';
                 checkbox.checked = false;
                 checkbox.disabled = true;
                 return;
@@ -1052,14 +1038,19 @@
             if (!videos.length || currentIndex >= videos.length) return;
 
             const checkbox = document.getElementById('reviewCheckbox');
-            const targetStatus = checkbox.checked ? 'reviewed' : 'recheck';
             const video = videos[currentIndex];
+
+            if (checkbox.checked) {
+                checkbox.checked = false;
+                showToast('请使用“通过”或“拒绝”标注审核结果', 'info');
+                return;
+            }
 
             requirePassword(async () => {
                 checkbox.disabled = true;
-                const saved = await setReviewStatus(video.id, targetStatus);
+                const saved = await setReviewStatus(video.id, 'recheck');
                 if (saved) {
-                    showToast(targetStatus === 'recheck' ? '已设为复审' : '已勾选为完成审核', 'info');
+                    showToast('已设为复审', 'info');
                 }
                 updateCurrentReviewStatus();
             }, updateCurrentReviewStatus);
@@ -1295,7 +1286,7 @@
         function markReviewedPages() {
             const reviewedPage = getBoundedPageNumber(document.getElementById('reviewedPageInput').value, 0);
             if (reviewedPage === null) {
-                showToast('请输入有效的已审核页码', 'error');
+                showToast('请输入有效页码', 'error');
                 return;
             }
 
