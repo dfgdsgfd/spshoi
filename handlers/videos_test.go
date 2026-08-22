@@ -26,6 +26,7 @@ func setupRouter() *gin.Engine {
 		api.GET("/proxy/image", ProxyImage)
 		api.GET("/review/state", GetReviewState)
 		api.POST("/review/state", AddReviewedID)
+		api.POST("/review/batch", BatchReview)
 		api.DELETE("/review/state", ClearReviewState)
 		api.GET("/review/pages", GetPageCache)
 		api.POST("/review/pages", SavePageCache)
@@ -176,6 +177,76 @@ func TestBatchDisableVideos_ValidRequest(t *testing.T) {
 	}
 }
 
+func TestBatchReview_ValidRequest(t *testing.T) {
+	r := setupRouter()
+	t.Setenv("REVIEW_STATE_PATH", t.TempDir()+"/review_state.json")
+
+	body := `{"videos":[{"post_id":101,"status":"approved"},{"post_id":202,"status":"rejected"}],"disable_rejected":false}`
+	req, _ := http.NewRequest(http.MethodPost, "/api/review/batch", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var response BatchReviewResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if response.Success != 2 || response.Failed != 0 {
+		t.Fatalf("unexpected batch result: %+v", response)
+	}
+	if response.State.Statuses[101] != reviewStatusApproved || response.State.Statuses[202] != reviewStatusRejected {
+		t.Fatalf("unexpected saved statuses: %+v", response.State.Statuses)
+	}
+}
+
+func TestBatchReview_PostIDsRequiresStatus(t *testing.T) {
+	r := setupRouter()
+	t.Setenv("REVIEW_STATE_PATH", t.TempDir()+"/review_state.json")
+
+	req, _ := http.NewRequest(http.MethodPost, "/api/review/batch", bytes.NewBufferString(`{"post_ids":[1,2]}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestFetchAllVideoPages(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		page := r.URL.Query().Get("page")
+		videos := map[string][]map[string]interface{}{
+			"1": []map[string]interface{}{{"post_id": 1, "title": "Video 1"}, {"post_id": 2, "title": "Video 2"}},
+			"2": []map[string]interface{}{{"post_id": 3, "title": "Video 3"}},
+		}[page]
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data":  map[string]interface{}{"videos": videos},
+			"count": map[string]interface{}{"videos": 3},
+		})
+	}))
+	defer upstream.Close()
+	t.Setenv("VIDEO_API_BASE_URL", upstream.URL)
+
+	body, err := fetchAllVideoPages(context.Background(), 1, 2, "", "DESC")
+	if err != nil {
+		t.Fatalf("fetchAllVideoPages failed: %v", err)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("failed to parse aggregated response: %v", err)
+	}
+	if got := len(payload["posts"].([]interface{})); got != 3 {
+		t.Fatalf("expected 3 posts, got %d", got)
+	}
+	if got := int(payload["source_total_pages"].(float64)); got != 2 {
+		t.Fatalf("expected source_total_pages 2, got %d", got)
+	}
+}
+
 func TestGetVideos_WithSearchParam(t *testing.T) {
 	r := setupRouter()
 
@@ -248,6 +319,12 @@ func TestReviewPage(t *testing.T) {
 			}
 			if !bytes.Contains(w.Body.Bytes(), []byte("markReviewedPages")) {
 				t.Error("expected review page to contain reviewed-page marking support")
+			}
+			if !bytes.Contains(w.Body.Bytes(), []byte("只显示复审视频")) {
+				t.Error("expected review page to contain recheck-only filter")
+			}
+			if !bytes.Contains(w.Body.Bytes(), []byte("/review/batch")) {
+				t.Error("expected review page to contain batch review API support")
 			}
 		})
 	}

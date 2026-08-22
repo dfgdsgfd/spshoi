@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -33,6 +35,37 @@ type ReviewStatusRequest struct {
 	PostID     int    `json:"post_id" example:"12345"`
 	Status     string `json:"status" enums:"approved,rejected" example:"approved"`
 	RecheckAll *bool  `json:"recheck_all"`
+}
+
+// BatchReviewItem describes one video's AI or bulk-review result.
+type BatchReviewItem struct {
+	PostID int    `json:"post_id" example:"12345"`
+	Status string `json:"status" enums:"approved,rejected" example:"approved"`
+}
+
+// BatchReviewRequest supports either per-video statuses or one status for a list of IDs.
+type BatchReviewRequest struct {
+	Videos          []BatchReviewItem `json:"videos"`
+	PostIDs         []int             `json:"post_ids" example:"1,2,3"`
+	Status          string            `json:"status" enums:"approved,rejected" example:"approved"`
+	DisableRejected *bool             `json:"disable_rejected" example:"true"`
+}
+
+type BatchReviewResult struct {
+	PostID   int    `json:"post_id"`
+	Status   string `json:"status"`
+	Success  bool   `json:"success"`
+	Disabled bool   `json:"disabled"`
+	Message  string `json:"message"`
+}
+
+type BatchReviewResponse struct {
+	Success  int                `json:"success"`
+	Failed   int                `json:"failed"`
+	Total    int                `json:"total"`
+	Disabled int                `json:"disabled"`
+	Results  []BatchReviewResult `json:"results"`
+	State    *ReviewState       `json:"state"`
 }
 
 var reviewStateMu sync.Mutex
@@ -178,6 +211,122 @@ func AddReviewedID(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, state)
+}
+
+// BatchReview godoc
+// @Summary Batch save video review results
+// @Description Save approved or rejected results for multiple videos. Use videos for mixed statuses, or post_ids plus status for one status. Rejected videos are disabled upstream by default.
+// @Tags review
+// @Accept json
+// @Produce json
+// @Param request body BatchReviewRequest true "Batch review request"
+// @Success 200 {object} BatchReviewResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /review/batch [post]
+func BatchReview(c *gin.Context) {
+	var req BatchReviewRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid request: " + err.Error()})
+		return
+	}
+
+	items := make([]BatchReviewItem, 0, len(req.Videos)+len(req.PostIDs))
+	items = append(items, req.Videos...)
+	if len(req.PostIDs) > 0 {
+		status := strings.ToLower(strings.TrimSpace(req.Status))
+		if !isValidReviewStatus(status) {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "status must be approved or rejected when post_ids is used"})
+			return
+		}
+		for _, postID := range req.PostIDs {
+			items = append(items, BatchReviewItem{PostID: postID, Status: status})
+		}
+	}
+	if len(items) == 0 {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "videos or post_ids is required"})
+		return
+	}
+
+	seen := make(map[int]struct{}, len(items))
+	normalized := make([]BatchReviewItem, 0, len(items))
+	for _, item := range items {
+		item.Status = strings.ToLower(strings.TrimSpace(item.Status))
+		if item.PostID < 1 {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "post_id must be greater than zero"})
+			return
+		}
+		if item.Status == "" {
+			item.Status = strings.ToLower(strings.TrimSpace(req.Status))
+		}
+		if !isValidReviewStatus(item.Status) {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "each video status must be approved or rejected"})
+			return
+		}
+		if _, exists := seen[item.PostID]; exists {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "duplicate post_id: " + strconv.Itoa(item.PostID)})
+			return
+		}
+		seen[item.PostID] = struct{}{}
+		normalized = append(normalized, item)
+	}
+
+	disableRejected := true
+	if req.DisableRejected != nil {
+		disableRejected = *req.DisableRejected
+	}
+
+	results := make([]BatchReviewResult, 0, len(normalized))
+	successful := make([]BatchReviewItem, 0, len(normalized))
+	successCount := 0
+	failedCount := 0
+	disabledCount := 0
+	for _, item := range normalized {
+		result := BatchReviewResult{PostID: item.PostID, Status: item.Status}
+		if item.Status == reviewStatusRejected && disableRejected {
+			result.Success, result.Message = disableVideoUpstream(c.Request.Context(), item.PostID)
+			result.Disabled = result.Success
+			if result.Success {
+				disabledCount++
+			}
+		} else {
+			result.Success = true
+			result.Message = "ok"
+		}
+
+		if result.Success {
+			successCount++
+			successful = append(successful, item)
+		} else {
+			failedCount++
+		}
+		results = append(results, result)
+	}
+
+	reviewStateMu.Lock()
+	defer reviewStateMu.Unlock()
+	state, err := loadReviewState()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to load review state: " + err.Error()})
+		return
+	}
+	for _, item := range successful {
+		state.Statuses[item.PostID] = item.Status
+	}
+	normalizeReviewState(state)
+	if err := saveReviewState(state); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to save review state: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, BatchReviewResponse{
+		Success:  successCount,
+		Failed:   failedCount,
+		Total:    len(normalized),
+		Disabled: disabledCount,
+		Results:  results,
+		State:    state,
+	})
 }
 
 // ClearReviewState godoc

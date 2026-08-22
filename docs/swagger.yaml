@@ -1,5 +1,71 @@
 basePath: /api
 definitions:
+  handlers.BatchReviewItem:
+    properties:
+      post_id:
+        example: 12345
+        type: integer
+      status:
+        enum:
+        - approved
+        - rejected
+        example: approved
+        type: string
+    type: object
+  handlers.BatchReviewRequest:
+    properties:
+      disable_rejected:
+        example: true
+        type: boolean
+      post_ids:
+        example:
+        - 1
+        - 2
+        - 3
+        items:
+          type: integer
+        type: array
+      status:
+        enum:
+        - approved
+        - rejected
+        example: approved
+        type: string
+      videos:
+        items:
+          $ref: '#/definitions/handlers.BatchReviewItem'
+        type: array
+    type: object
+  handlers.BatchReviewResponse:
+    properties:
+      disabled:
+        type: integer
+      failed:
+        type: integer
+      results:
+        items:
+          $ref: '#/definitions/handlers.BatchReviewResult'
+        type: array
+      state:
+        $ref: '#/definitions/handlers.ReviewState'
+      success:
+        type: integer
+      total:
+        type: integer
+    type: object
+  handlers.BatchReviewResult:
+    properties:
+      disabled:
+        type: boolean
+      message:
+        type: string
+      post_id:
+        type: integer
+      status:
+        type: string
+      success:
+        type: boolean
+    type: object
   handlers.BatchDisableRequest:
     properties:
       post_ids:
@@ -139,6 +205,8 @@ definitions:
     type: object
   handlers.VideoListResponse:
     properties:
+      all:
+        type: boolean
       page:
         type: integer
       posts:
@@ -146,7 +214,11 @@ definitions:
         type: array
       total:
         type: integer
+      total_posts:
+        type: integer
       total_pages:
+        type: integer
+      source_total_pages:
         type: integer
     type: object
   handlers.VideoToggleRequest:
@@ -162,8 +234,8 @@ definitions:
     type: object
 info:
   contact: {}
-  description: A Go-Gin based API for video center management. Provides endpoints
-    to list videos and batch toggle video enable/disable status.
+  description: A Go-Gin based API for video center management. Provides paginated
+    or full video lists, batch video toggles, and batch AI/manual review results.
   title: Video Center API
   version: "1.0"
 paths:
@@ -354,12 +426,45 @@ paths:
       summary: Add reviewed video ID
       tags:
       - review
+  /review/batch:
+    post:
+      consumes:
+      - application/json
+      description: Save approved or rejected results for multiple videos. Use videos
+        for mixed statuses, or post_ids plus status for one status. Rejected videos
+        are disabled upstream by default.
+      parameters:
+      - description: Batch review request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.BatchReviewRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.BatchReviewResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Batch save video review results
+      tags:
+      - review
   /videos:
     get:
       consumes:
       - application/json
       description: Fetch video list from the upstream API with pagination, search,
-        and sorting options
+        and sorting options. Set all=true to aggregate all upstream pages into one
+        response.
       parameters:
       - default: 1
         description: Page number
@@ -386,6 +491,11 @@ paths:
         in: query
         name: order
         type: string
+      - default: false
+        description: Load all upstream pages without pagination
+        in: query
+        name: all
+        type: boolean
       produces:
       - application/json
       responses:

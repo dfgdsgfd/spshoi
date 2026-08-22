@@ -42,10 +42,13 @@ func getSessionCookie() string {
 
 // VideoListResponse represents the response from the video list API
 type VideoListResponse struct {
-	Posts      []interface{} `json:"posts"`
-	Page       int           `json:"page"`
-	TotalPages int           `json:"total_pages"`
-	Total      int           `json:"total"`
+	Posts            []interface{} `json:"posts"`
+	Page             int           `json:"page"`
+	TotalPages       int           `json:"total_pages"`
+	Total            int           `json:"total"`
+	TotalPosts       int           `json:"total_posts"`
+	All              bool          `json:"all,omitempty"`
+	SourceTotalPages int           `json:"source_total_pages,omitempty"`
 }
 
 // VideoToggleRequest represents a single video toggle item
@@ -381,7 +384,7 @@ type ErrorResponse struct {
 
 // GetVideos godoc
 // @Summary Get video center list
-// @Description Fetch video list from the upstream API with pagination, search, and sorting options
+// @Description Fetch video list from the upstream API with pagination, search, and sorting options. Set all=true to aggregate all upstream pages into one response.
 // @Tags videos
 // @Accept json
 // @Produce json
@@ -389,6 +392,7 @@ type ErrorResponse struct {
 // @Param per_page query int false "Items per page" default(20) minimum(1) maximum(100)
 // @Param search query string false "Search keyword"
 // @Param order query string false "Sort order" Enums(ASC, DESC) default(DESC)
+// @Param all query bool false "Load all upstream pages without pagination" default(false)
 // @Success 200 {object} VideoListResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 502 {object} ErrorResponse
@@ -413,51 +417,227 @@ func GetVideos(c *gin.Context) {
 		order = "DESC"
 	}
 
-	url := fmt.Sprintf("%s/pyvideo2/api/videos/manage?page=%d&limit=%d&sort_by=created_at&sort_order=%s",
-		getBaseURL(), page, perPage, order)
-	if search != "" {
-		url += "&search=" + url_pkg.QueryEscape(search)
+	loadAll := strings.EqualFold(c.DefaultQuery("all", "false"), "true") || c.Query("all") == "1"
+	if loadAll && c.Query("per_page") == "" {
+		perPage = 100
 	}
+	var transformed []byte
+	if loadAll {
+		var err error
+		transformed, err = fetchAllVideoPages(c.Request.Context(), page, perPage, search, order)
+		if err != nil {
+			if upstreamErr, ok := err.(*upstreamVideoListError); ok {
+				c.Data(upstreamErr.StatusCode, "application/json", upstreamErr.Body)
+				return
+			}
+			c.JSON(http.StatusBadGateway, ErrorResponse{Error: err.Error()})
+			return
+		}
+	} else {
+		body, statusCode, err := fetchVideoListPage(c.Request.Context(), page, perPage, search, order)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, ErrorResponse{Error: err.Error()})
+			return
+		}
+		if statusCode != http.StatusOK {
+			c.Data(statusCode, "application/json", body)
+			return
+		}
 
-	client := &http.Client{Timeout: 15 * time.Second}
-	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, url, nil)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to create request"})
-		return
+		// Transform v2 response envelope into the flat format expected downstream.
+		transformed = transformV2Response(body, page, perPage)
 	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-API-KEY", getAPIKey())
-
-	// The /pyvideo2/api/videos/manage endpoint requires session cookie authentication
-	if sessionCookie := getSessionCookie(); sessionCookie != "" {
-		req.AddCookie(&http.Cookie{
-			Name:  "pyvideo2_session",
-			Value: sessionCookie,
-		})
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		c.JSON(http.StatusBadGateway, ErrorResponse{Error: "failed to fetch data from upstream"})
-		return
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		c.JSON(http.StatusBadGateway, ErrorResponse{Error: "failed to read upstream response"})
-		return
-	}
-
-	// Transform v2 response envelope into the flat format expected downstream
-	transformed := transformV2Response(body, page, perPage)
 
 	// Enrich posts with 720p video URLs fetched in parallel from upstream
 	enriched := enrichWithVideoURLs(c.Request.Context(), transformed)
 
 	// Rewrite video URLs to go through our proxy so browsers can access them
 	rewritten := rewriteVideoURLs(enriched)
-	c.Data(resp.StatusCode, "application/json", rewritten)
+	c.Data(http.StatusOK, "application/json", rewritten)
+}
+
+func disableVideoUpstream(ctx context.Context, postID int) (bool, string) {
+	payload, _ := json.Marshal(map[string]interface{}{
+		"post_id": postID,
+		"enable":  false,
+	})
+
+	url := fmt.Sprintf("%s/pyvideo2/api/admin/video-enable-toggle", getBaseURL())
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return false, "failed to create request"
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "application/json")
+	httpReq.Header.Set("X-API-KEY", getAPIKey())
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return false, "failed to call upstream API"
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == http.StatusOK {
+		return true, "disabled"
+	}
+	return false, fmt.Sprintf("upstream returned %d: %s", resp.StatusCode, string(body))
+}
+
+const maxVideoAggregationPages = 1000
+
+type upstreamVideoListError struct {
+	StatusCode int
+	Body       []byte
+}
+
+func (e *upstreamVideoListError) Error() string {
+	return fmt.Sprintf("upstream returned %d", e.StatusCode)
+}
+
+func fetchVideoListPage(ctx context.Context, page, perPage int, search, order string) ([]byte, int, error) {
+	u := fmt.Sprintf("%s/pyvideo2/api/videos/manage?page=%d&limit=%d&sort_by=created_at&sort_order=%s",
+		getBaseURL(), page, perPage, order)
+	if search != "" {
+		u += "&search=" + url_pkg.QueryEscape(search)
+	}
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to create request")
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-API-KEY", getAPIKey())
+
+	// The /pyvideo2/api/videos/manage endpoint requires session cookie authentication.
+	if sessionCookie := getSessionCookie(); sessionCookie != "" {
+		req.AddCookie(&http.Cookie{Name: "pyvideo2_session", Value: sessionCookie})
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to fetch data from upstream")
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, resp.StatusCode, fmt.Errorf("failed to read upstream response")
+	}
+	return body, resp.StatusCode, nil
+}
+
+func parseVideoListPayload(body []byte, page, perPage int) (map[string]interface{}, bool) {
+	transformed := transformV2Response(body, page, perPage)
+	var payload map[string]interface{}
+	if err := json.Unmarshal(transformed, &payload); err != nil {
+		return nil, false
+	}
+	if _, ok := payload["posts"].([]interface{}); !ok {
+		return nil, false
+	}
+	return payload, true
+}
+
+func intFromPayload(payload map[string]interface{}, key string, fallback int) int {
+	if value, ok := payload[key].(float64); ok {
+		return int(value)
+	}
+	return fallback
+}
+
+func videoPayloadKey(video interface{}) string {
+	videoMap, ok := video.(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	if id, ok := videoMap["id"]; ok {
+		return fmt.Sprint(id)
+	}
+	if id, ok := videoMap["post_id"]; ok {
+		return fmt.Sprint(id)
+	}
+	return ""
+}
+
+func fetchAllVideoPages(ctx context.Context, firstPage, perPage int, search, order string) ([]byte, error) {
+	// all=true is intentionally independent of the requested page.
+	firstPage = 1
+
+	firstBody, statusCode, err := fetchVideoListPage(ctx, firstPage, perPage, search, order)
+	if err != nil {
+		return nil, err
+	}
+	if statusCode != http.StatusOK {
+		return nil, &upstreamVideoListError{StatusCode: statusCode, Body: firstBody}
+	}
+
+	firstPayload, ok := parseVideoListPayload(firstBody, firstPage, perPage)
+	if !ok {
+		// Preserve compatibility with non-standard upstream responses.
+		return transformV2Response(firstBody, firstPage, perPage), nil
+	}
+
+	allPosts := make([]interface{}, 0)
+	seen := make(map[string]struct{})
+	appendPosts := func(payload map[string]interface{}) {
+		posts, _ := payload["posts"].([]interface{})
+		for _, post := range posts {
+			key := videoPayloadKey(post)
+			if key != "" {
+				if _, exists := seen[key]; exists {
+					continue
+				}
+				seen[key] = struct{}{}
+			}
+			allPosts = append(allPosts, post)
+		}
+	}
+	appendPosts(firstPayload)
+
+	sourceTotalPages := intFromPayload(firstPayload, "total_pages", firstPage)
+	if sourceTotalPages < firstPage {
+		sourceTotalPages = firstPage
+	}
+	if sourceTotalPages-firstPage > maxVideoAggregationPages {
+		return nil, fmt.Errorf("too many upstream pages to aggregate")
+	}
+
+	for page := firstPage + 1; page <= sourceTotalPages; page++ {
+		body, status, fetchErr := fetchVideoListPage(ctx, page, perPage, search, order)
+		if fetchErr != nil {
+			return nil, fetchErr
+		}
+		if status != http.StatusOK {
+			return nil, &upstreamVideoListError{StatusCode: status, Body: body}
+		}
+		payload, valid := parseVideoListPayload(body, page, perPage)
+		if !valid {
+			return nil, fmt.Errorf("invalid video list response from upstream on page %d", page)
+		}
+		appendPosts(payload)
+	}
+
+	totalPosts := intFromPayload(firstPayload, "total_posts", intFromPayload(firstPayload, "total", len(allPosts)))
+	if totalPosts < len(allPosts) {
+		totalPosts = len(allPosts)
+	}
+	result := map[string]interface{}{
+		"posts":              allPosts,
+		"page":               1,
+		"total_pages":        1,
+		"total_posts":        totalPosts,
+		"total":              totalPosts,
+		"all":                true,
+		"source_total_pages": sourceTotalPages,
+	}
+	resultBody, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build aggregated video list")
+	}
+	return resultBody, nil
 }
 
 // BatchToggleVideos godoc
@@ -558,7 +738,6 @@ func BatchDisableVideos(c *gin.Context) {
 		return
 	}
 
-	client := &http.Client{Timeout: 15 * time.Second}
 	results := make([]DisableResult, 0, len(req.PostIDs))
 	disabledCount := 0
 	failedCount := 0
@@ -568,43 +747,10 @@ func BatchDisableVideos(c *gin.Context) {
 			PostID: postID,
 		}
 
-		payload, _ := json.Marshal(map[string]interface{}{
-			"post_id": postID,
-			"enable":  false,
-		})
-
-		url := fmt.Sprintf("%s/pyvideo2/api/admin/video-enable-toggle", getBaseURL())
-		httpReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, url, bytes.NewReader(payload))
-		if err != nil {
-			result.Success = false
-			result.Message = "failed to create request"
-			failedCount++
-			results = append(results, result)
-			continue
-		}
-		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("Accept", "application/json")
-		httpReq.Header.Set("X-API-KEY", getAPIKey())
-
-		resp, err := client.Do(httpReq)
-		if err != nil {
-			result.Success = false
-			result.Message = "failed to call upstream API"
-			failedCount++
-			results = append(results, result)
-			continue
-		}
-
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-
-		if resp.StatusCode == http.StatusOK {
-			result.Success = true
-			result.Message = "disabled"
+		result.Success, result.Message = disableVideoUpstream(c.Request.Context(), postID)
+		if result.Success {
 			disabledCount++
 		} else {
-			result.Success = false
-			result.Message = fmt.Sprintf("upstream returned %d: %s", resp.StatusCode, string(body))
 			failedCount++
 		}
 

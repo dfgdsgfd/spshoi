@@ -201,6 +201,35 @@
         .page-tool-group label {
             color: #bbb;
         }
+        .page-tool-group.batch-select-group {
+            flex: 1 1 100%;
+            align-items: center;
+        }
+        .batch-input {
+            width: min(420px, 45vw);
+            min-height: 38px;
+            padding: 8px 12px;
+            border: 1px solid #0f3460;
+            border-radius: 6px;
+            background: #1a1a2e;
+            color: #eee;
+            font: inherit;
+            resize: vertical;
+            outline: none;
+        }
+        .batch-input:focus { border-color: #3498db; }
+        .batch-selection-count { color: #f8c471; }
+        .btn-batch-approve, .btn-batch-reject {
+            padding: 8px 12px;
+            font-size: 13px;
+            min-width: auto;
+        }
+        .btn-batch-approve { background: #27ae60; color: #fff; }
+        .btn-batch-reject { background: #e74c3c; color: #fff; }
+        .all-mode-hint { color: #58d68d; font-size: 13px; }
+        .page-tools.all-mode .page-tool-group:not(.batch-select-group):not(.all-mode-hint) {
+            display: none;
+        }
         .page-tool-input {
             width: 96px;
             padding: 8px 12px;
@@ -317,6 +346,13 @@
             text-align: left;
             cursor: pointer;
             transition: all 0.2s;
+        }
+        .playlist-item-select {
+            float: right;
+            width: 17px;
+            height: 17px;
+            accent-color: #3498db;
+            cursor: pointer;
         }
         .playlist-item:hover {
             border-color: #3498db;
@@ -465,6 +501,8 @@
             .page-tool-input {
                 width: 84px;
             }
+            .batch-input { width: 100%; }
+            .page-tool-group.batch-select-group { justify-content: flex-start; }
             .container { padding: 12px; }
             .video-info h2 { font-size: 15px; }
             .video-info .meta { font-size: 12px; }
@@ -526,6 +564,10 @@
                 <input type="checkbox" id="filterDisabled" onchange="toggleDisabledFilter()" />
                 只显示被屏蔽视频
             </label>
+            <label class="filter-toggle" id="recheckFilterToggleLabel">
+                <input type="checkbox" id="filterRecheck" onchange="toggleRecheckFilter()" />
+                只显示复审视频
+            </label>
             <label class="filter-toggle" id="recheckAllLabel">
                 <input type="checkbox" id="recheckAll" onchange="toggleRecheckAll()" />
                 所有视频进入复审（保留原结果）
@@ -533,7 +575,7 @@
             <button class="btn btn-clear" onclick="clearReviewed()">清除审核记录</button>
         </div>
     </div>
-    <div class="page-tools">
+    <div class="page-tools" id="pageTools">
         <div class="page-tools-inner">
             <div class="page-tool-group">
                 <label for="pageJumpInput">跳转到第</label>
@@ -547,6 +589,16 @@
                 <span>页之后继续</span>
                 <button class="btn btn-mark" type="button" id="btnReviewedPage" onclick="markReviewedPages()">继续</button>
             </div>
+            <div class="page-tool-group batch-select-group">
+                <label for="videoIdsInput">批量选择视频ID</label>
+                <textarea id="videoIdsInput" class="batch-input" rows="1" placeholder="支持逗号、空格或换行分隔"></textarea>
+                <button class="btn btn-page" type="button" onclick="selectVideosByInput()">选择</button>
+                <button class="btn btn-clear" type="button" onclick="clearSelectedVideos()">清空</button>
+                <span class="batch-selection-count">已选 <span id="selectedCount">0</span> 个</span>
+                <button class="btn btn-batch-approve" type="button" onclick="batchApproveSelected()">批量通过</button>
+                <button class="btn btn-batch-reject" type="button" onclick="batchRejectSelected()">批量屏蔽</button>
+            </div>
+            <div class="page-tool-group all-mode-hint" id="allModeHint" style="display:none"></div>
         </div>
     </div>
 
@@ -587,7 +639,7 @@
             </div>
 
             <aside class="playlist-panel">
-                <h3>当前页视频列表</h3>
+                <h3>视频列表</h3>
                 <div id="videoList" class="playlist-list"></div>
             </aside>
         </div>
@@ -610,6 +662,7 @@
         let videos = [];
         let allVideos = []; // unfiltered list from API
         let showDisabledOnly = false;
+        let showRecheckOnly = false;
         let currentIndex = 0;
         let currentPage = 1;
         let totalPages = 1;
@@ -621,6 +674,7 @@
         let reviewStatuses = {};
         let recheckAll = false;
         let searchKeyword = '';
+        let selectedVideoIds = new Set();
 
         // Password verification - only prompt if not yet authenticated
         function requirePassword(action, cancelAction = null) {
@@ -716,6 +770,7 @@
         function renderVideoList() {
             const listEl = document.getElementById('videoList');
             listEl.innerHTML = '';
+            updateSelectedCount();
 
             if (!videos.length) {
                 const emptyEl = document.createElement('div');
@@ -726,8 +781,9 @@
             }
 
             videos.forEach((video, index) => {
-                const item = document.createElement('button');
-                item.type = 'button';
+                const item = document.createElement('div');
+                item.setAttribute('role', 'button');
+                item.tabIndex = 0;
                 item.className = 'playlist-item';
                 if (index === currentIndex) item.classList.add('current');
                 const status = getReviewStatus(video);
@@ -736,6 +792,25 @@
                     currentIndex = index;
                     displayCurrentVideo();
                 };
+                item.onkeydown = (event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        currentIndex = index;
+                        displayCurrentVideo();
+                    }
+                };
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'playlist-item-select';
+                checkbox.checked = selectedVideoIds.has(String(video.id));
+                checkbox.title = '选择此视频';
+                checkbox.onclick = (event) => event.stopPropagation();
+                checkbox.onchange = (event) => {
+                    event.stopPropagation();
+                    toggleVideoSelection(video.id, checkbox.checked);
+                };
+                item.appendChild(checkbox);
 
                 const title = document.createElement('div');
                 title.className = 'playlist-item-title';
@@ -765,6 +840,55 @@
                 item.appendChild(meta);
                 listEl.appendChild(item);
             });
+        }
+
+        function updateSelectedCount() {
+            document.getElementById('selectedCount').textContent = selectedVideoIds.size;
+        }
+
+        function toggleVideoSelection(id, checked) {
+            const key = String(id);
+            if (checked) {
+                selectedVideoIds.add(key);
+            } else {
+                selectedVideoIds.delete(key);
+            }
+            updateSelectedCount();
+        }
+
+        function parseVideoIDs(value) {
+            return [...new Set(value
+                .split(/[\s,，、;；]+/)
+                .map(token => Number(token))
+                .filter(id => Number.isInteger(id) && id > 0))];
+        }
+
+        function selectVideosByInput() {
+            const input = document.getElementById('videoIdsInput');
+            const ids = parseVideoIDs(input.value);
+            if (!ids.length) {
+                showToast('请输入有效的视频 ID', 'error');
+                return;
+            }
+            selectedVideoIds = new Set(ids.map(String));
+            renderVideoList();
+            const visibleCount = ids.filter(id => videos.some(video => String(video.id) === String(id))).length;
+            const missingCount = ids.length - visibleCount;
+            showToast(missingCount
+                ? `已选择 ${ids.length} 个视频，其中 ${missingCount} 个不在当前列表但仍可批量处理`
+                : `已选择 ${ids.length} 个视频`, 'success');
+        }
+
+        function clearSelectedVideos() {
+            selectedVideoIds.clear();
+            document.getElementById('videoIdsInput').value = '';
+            renderVideoList();
+        }
+
+        function getSelectedVideoIDs() {
+            return [...selectedVideoIds]
+                .map(id => Number.parseInt(id, 10))
+                .filter(id => Number.isInteger(id) && id > 0);
         }
 
         // --- Server-side page number persistence ---
@@ -832,9 +956,7 @@
                     throw new Error(data.error || '审核状态保存失败');
                 }
                 applyReviewState(data);
-                updateStats();
-                renderVideoList();
-                updateCurrentReviewStatus();
+                refreshVideosAfterStateChange(id);
                 return true;
             } catch (err) {
                 showToast('审核状态保存失败: ' + err.message, 'error');
@@ -855,6 +977,7 @@
                     throw new Error(data.error || '复审状态保存失败');
                 }
                 applyReviewState(data);
+                videos = applyVideoFilters(allVideos);
                 updateStats();
                 renderVideoList();
                 updateCurrentReviewStatus();
@@ -881,6 +1004,10 @@
                 const saved = await setRecheckAll(requested);
                 checkbox.disabled = false;
                 if (saved) {
+                    currentPage = 1;
+                    currentIndex = 0;
+                    updateLoadModeUI();
+                    loadVideos({ preferredIndex: 0 });
                     showToast(requested ? '所有视频已进入复审，原审核结果已保留' : '已退出全量复审模式', 'info');
                 }
             }, updateRecheckAllControl);
@@ -896,6 +1023,7 @@
                             throw new Error(data.error || '审核记录清除失败');
                         }
                         applyReviewState(data);
+                        videos = applyVideoFilters(allVideos);
                     } catch (err) {
                         showToast('审核记录清除失败: ' + err.message, 'error');
                         return;
@@ -911,9 +1039,10 @@
         function updateStats() {
             document.getElementById('reviewedCount').textContent = getReviewedIds().length;
             document.getElementById('recheckCount').textContent = videos.filter(video => getReviewStatus(video) === 'recheck').length;
-            document.getElementById('currentPage').textContent = currentPage + '/' + totalPages;
+            document.getElementById('currentPage').textContent = isAllVideosMode() ? '全量' : currentPage + '/' + totalPages;
             document.getElementById('totalCount').textContent = totalCount;
             document.getElementById('pageJumpInput').value = currentPage;
+            updateSelectedCount();
         }
 
         function showToast(msg, type) {
@@ -941,12 +1070,66 @@
             return page;
         }
 
+        function applyVideoFilters(list) {
+            let filtered = list;
+            if (showDisabledOnly) {
+                filtered = filtered.filter(video => isVideoDisabled(video));
+            }
+            if (showRecheckOnly) {
+                filtered = filtered.filter(video => getReviewStatus(video) === 'recheck');
+            }
+            return filtered;
+        }
+
+        function isAllVideosMode() {
+            return showDisabledOnly || showRecheckOnly || recheckAll;
+        }
+
+        function updateLoadModeUI() {
+            const pageTools = document.getElementById('pageTools');
+            const hint = document.getElementById('allModeHint');
+            const allMode = isAllVideosMode();
+            pageTools.classList.toggle('all-mode', allMode);
+            hint.style.display = allMode ? 'flex' : 'none';
+            hint.textContent = allMode
+                ? '当前筛选已切换为全量加载，不受页码限制。'
+                : '';
+        }
+
+        function refreshVideosAfterStateChange(previousId = null) {
+            const previousIndex = videos.findIndex(video => String(video.id) === String(previousId));
+            videos = applyVideoFilters(allVideos);
+            if (!videos.length) {
+                currentIndex = 0;
+                renderVideoList();
+                showEmptyState('筛选条件下暂无视频', '可以清除当前筛选，或继续输入其他视频 ID。');
+                updateStats();
+                updateCurrentReviewStatus();
+                return;
+            }
+
+            const sameVideoIndex = videos.findIndex(video => String(video.id) === String(previousId));
+            currentIndex = sameVideoIndex >= 0
+                ? sameVideoIndex
+                : Math.min(Math.max(previousIndex, 0), videos.length - 1);
+            showVideoSection();
+            updateStats();
+            displayCurrentVideo();
+        }
+
         async function loadVideos(options = {}) {
             const { preferredIndex = null, preferLast = false } = options;
             try {
                 const url = new URL(API_BASE + '/videos', window.location.origin);
-                url.searchParams.set('page', currentPage);
-                url.searchParams.set('per_page', '24');
+                const allMode = isAllVideosMode();
+                if (allMode) {
+                    currentPage = 1;
+                    url.searchParams.set('all', 'true');
+                    url.searchParams.set('per_page', '100');
+                } else {
+                    url.searchParams.set('page', currentPage);
+                    url.searchParams.set('per_page', '24');
+                }
                 url.searchParams.set('order', 'DESC');
                 if (searchKeyword) {
                     url.searchParams.set('search', searchKeyword);
@@ -961,13 +1144,17 @@
                 totalPages = data.total_pages || 1;
                 totalCount = data.total_posts || data.total || 0;
                 allVideos = Array.isArray(data.posts) ? data.posts : [];
-                videos = applyDisabledFilter(allVideos);
+                videos = applyVideoFilters(allVideos);
 
-                await savePageNumberToServer(currentPage);
+                if (!allMode) {
+                    await savePageNumberToServer(currentPage);
+                }
 
                 if (!videos.length) {
                     renderVideoList();
-                    showEmptyState('当前页暂无可展示的视频', '筛选条件下没有视频；请手动切换页面或调整筛选条件。');
+                    showEmptyState(allMode ? '全量筛选下暂无视频' : '当前页暂无可展示的视频', allMode
+                        ? '没有符合当前复审或屏蔽筛选条件的视频。'
+                        : '筛选条件下没有视频；请手动切换页面或调整筛选条件。');
                     updateStats();
                     return;
                 }
@@ -1235,6 +1422,7 @@
                     if (!resp.ok || data.disabled < 1) {
                         throw new Error(data.results?.[0]?.message || data.error || '上游未确认屏蔽');
                     }
+                    video.enable = false;
                     const saved = await setReviewStatus(video.id, 'rejected');
                     if (saved) {
                         showToast(`已拒绝并禁用: ${video.title}`, 'error');
@@ -1247,11 +1435,77 @@
             });
         }
 
+        function batchApproveSelected() {
+            batchReviewSelected('approved');
+        }
+
+        function batchRejectSelected() {
+            batchReviewSelected('rejected');
+        }
+
+        async function batchReviewSelected(status) {
+            const ids = getSelectedVideoIDs();
+            if (!ids.length) {
+                showToast('请先输入或勾选要处理的视频 ID', 'error');
+                return;
+            }
+
+            requirePassword(async () => {
+                const currentVideoID = videos[currentIndex]?.id ?? null;
+                setButtonsEnabled(false);
+                try {
+                    const resp = await fetch(API_BASE + '/review/batch', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            videos: ids.map(post_id => ({ post_id, status })),
+                            disable_rejected: status === 'rejected',
+                        }),
+                    });
+                    const data = await resp.json();
+                    if (!resp.ok) {
+                        throw new Error(data.error || '批量审核失败');
+                    }
+
+                    const successfulIDs = (data.results || [])
+                        .filter(result => result.success)
+                        .map(result => String(result.post_id));
+                    successfulIDs.forEach(id => selectedVideoIds.delete(id));
+                    document.getElementById('videoIdsInput').value = [...selectedVideoIds].join(', ');
+                    if (data.state) {
+                        applyReviewState(data.state);
+                    } else {
+                        applyReviewState(data);
+                    }
+                    if (status === 'rejected') {
+                        const successfulSet = new Set(successfulIDs);
+                        allVideos.forEach(video => {
+                            if (successfulSet.has(String(video.id))) video.enable = false;
+                        });
+                    }
+                    refreshVideosAfterStateChange(currentVideoID);
+                    const failed = data.failed || 0;
+                    showToast(failed
+                        ? `已处理 ${data.success || 0} 个，${failed} 个失败`
+                        : `已批量${status === 'approved' ? '通过' : '屏蔽'} ${data.success || ids.length} 个视频`, failed ? 'info' : 'success');
+                } catch (err) {
+                    showToast('批量审核失败: ' + err.message, 'error');
+                } finally {
+                    setButtonsEnabled(true);
+                }
+            });
+        }
+
         function nextVideo() {
             if (currentIndex >= videos.length) return;
             if (currentIndex < videos.length - 1) {
                 currentIndex++;
                 displayCurrentVideo();
+                return;
+            }
+
+            if (isAllVideosMode()) {
+                showToast('已经是全量筛选结果中的最后一个视频', 'info');
                 return;
             }
 
@@ -1278,6 +1532,10 @@
         }
 
         function jumpToPage() {
+            if (isAllVideosMode()) {
+                showToast('全量筛选模式下无需按页跳转', 'info');
+                return;
+            }
             const targetPage = getBoundedPageNumber(document.getElementById('pageJumpInput').value, 1);
             if (!targetPage) {
                 showToast('请输入有效页码', 'error');
@@ -1294,6 +1552,10 @@
         }
 
         function markReviewedPages() {
+            if (isAllVideosMode()) {
+                showToast('全量筛选模式下无需按页继续', 'info');
+                return;
+            }
             const reviewedPage = getBoundedPageNumber(document.getElementById('reviewedPageInput').value, 0);
             if (reviewedPage === null) {
                 showToast('请输入有效页码', 'error');
@@ -1332,35 +1594,31 @@
             return video.enable === false || video.enable === 0;
         }
 
-        function applyDisabledFilter(list) {
-            if (!showDisabledOnly) return list;
-            return list.filter(v => isVideoDisabled(v));
-        }
-
         function toggleDisabledFilter() {
             showDisabledOnly = document.getElementById('filterDisabled').checked;
             const label = document.getElementById('filterToggleLabel');
-            if (showDisabledOnly) {
-                label.classList.add('active');
-            } else {
-                label.classList.remove('active');
-            }
-            // Re-apply filter on current data
-            videos = applyDisabledFilter(allVideos);
+            label.classList.toggle('active', showDisabledOnly);
+            currentPage = 1;
             currentIndex = 0;
-            renderVideoList();
-            if (videos.length) {
-                displayCurrentVideo();
-            } else {
-                showEmptyState('当前页没有被屏蔽的视频', '请关闭“只显示被屏蔽视频”或手动切换页面。');
-            }
-            updateStats();
+            updateLoadModeUI();
+            loadVideos({ preferredIndex: 0 });
+        }
+
+        function toggleRecheckFilter() {
+            showRecheckOnly = document.getElementById('filterRecheck').checked;
+            const label = document.getElementById('recheckFilterToggleLabel');
+            label.classList.toggle('active', showRecheckOnly);
+            currentPage = 1;
+            currentIndex = 0;
+            updateLoadModeUI();
+            loadVideos({ preferredIndex: 0 });
         }
 
         // Init: restore remembered page state from the server, load reviewed IDs, then resume review
         (async () => {
             await loadPageNumberFromServer();
             await fetchReviewedIds();
+            updateLoadModeUI();
             updateStats();
             loadVideos();
             // Allow Enter key to trigger search

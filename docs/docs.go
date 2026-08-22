@@ -291,9 +291,55 @@ const docTemplate = `{
                 }
             }
         },
+        "/review/batch": {
+            "post": {
+                "description": "Save approved or rejected results for multiple videos. Use videos for mixed statuses, or post_ids plus status for one status. Rejected videos are disabled upstream by default.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "review"
+                ],
+                "summary": "Batch save video review results",
+                "parameters": [
+                    {
+                        "description": "Batch review request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.BatchReviewRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.BatchReviewResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/videos": {
             "get": {
-                "description": "Fetch video list from the upstream API with pagination, search, and sorting options",
+                "description": "Fetch video list from the upstream API with pagination, search, and sorting options. Set all=true to aggregate all upstream pages into one response.",
                 "consumes": [
                     "application/json"
                 ],
@@ -337,6 +383,13 @@ const docTemplate = `{
                         "default": "DESC",
                         "description": "Sort order",
                         "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Load all upstream pages without pagination",
+                        "name": "all",
                         "in": "query"
                     }
                 ],
@@ -502,6 +555,103 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "handlers.BatchReviewItem": {
+            "type": "object",
+            "properties": {
+                "post_id": {
+                    "type": "integer",
+                    "example": 12345
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "approved",
+                        "rejected"
+                    ],
+                    "example": "approved"
+                }
+            }
+        },
+        "handlers.BatchReviewRequest": {
+            "type": "object",
+            "properties": {
+                "disable_rejected": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "post_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    },
+                    "example": [
+                        1,
+                        2,
+                        3
+                    ]
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "approved",
+                        "rejected"
+                    ],
+                    "example": "approved"
+                },
+                "videos": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handlers.BatchReviewItem"
+                    }
+                }
+            }
+        },
+        "handlers.BatchReviewResponse": {
+            "type": "object",
+            "properties": {
+                "disabled": {
+                    "type": "integer"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handlers.BatchReviewResult"
+                    }
+                },
+                "state": {
+                    "$ref": "#/definitions/handlers.ReviewState"
+                },
+                "success": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handlers.BatchReviewResult": {
+            "type": "object",
+            "properties": {
+                "disabled": {
+                    "type": "boolean"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "post_id": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
         "handlers.BatchDisableRequest": {
             "type": "object",
             "required": [
@@ -711,6 +861,9 @@ const docTemplate = `{
         "handlers.VideoListResponse": {
             "type": "object",
             "properties": {
+                "all": {
+                    "type": "boolean"
+                },
                 "page": {
                     "type": "integer"
                 },
@@ -721,7 +874,13 @@ const docTemplate = `{
                 "total": {
                     "type": "integer"
                 },
+                "total_posts": {
+                    "type": "integer"
+                },
                 "total_pages": {
+                    "type": "integer"
+                },
+                "source_total_pages": {
                     "type": "integer"
                 }
             }
@@ -752,7 +911,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/api",
 	Schemes:          []string{"http", "https"},
 	Title:            "Video Center API",
-	Description:      "A Go-Gin based API for video center management. Provides endpoints to list videos and batch toggle video enable/disable status.",
+	Description:      "A Go-Gin based API for video center management. Provides paginated or full video lists, batch video toggles, and batch AI/manual review results.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

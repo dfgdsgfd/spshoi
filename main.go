@@ -16,7 +16,7 @@ import (
 
 // @title Video Center API
 // @version 1.0
-// @description A Go-Gin based API for video center management. Provides endpoints to list videos and batch toggle video enable/disable status.
+// @description A Go-Gin based API for video center management. Provides paginated or full video lists, batch video toggles, and batch AI/manual review results.
 
 // @schemes http https
 // @BasePath /api
@@ -41,6 +41,7 @@ func main() {
 		api.GET("/proxy/image", handlers.ProxyImage)
 		api.GET("/review/state", handlers.GetReviewState)
 		api.POST("/review/state", handlers.AddReviewedID)
+		api.POST("/review/batch", handlers.BatchReview)
 		api.DELETE("/review/state", handlers.ClearReviewState)
 		api.GET("/review/pages", handlers.GetPageCache)
 		api.POST("/review/pages", handlers.SavePageCache)
